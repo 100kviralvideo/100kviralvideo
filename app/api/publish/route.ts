@@ -129,10 +129,11 @@ function validatePublishPayload(value: unknown) {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  const expected = `Bearer ${process.env.PUBLISHER_API_KEY}`;
+  const authHeader = req.headers.get("authorization")?.trim();
+  const publisherApiKey = process.env.PUBLISHER_API_KEY?.trim();
+  const expected = `Bearer ${publisherApiKey}`;
 
-  if (!process.env.PUBLISHER_API_KEY || authHeader !== expected) {
+  if (!publisherApiKey || authHeader !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

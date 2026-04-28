@@ -104,9 +104,10 @@ export async function GET() {
     components: {
       securitySchemes: {
         bearerAuth: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "API key",
+          type: "apiKey",
+          in: "header",
+          name: "Authorization",
+          description: "Enter: Bearer your_publish_api_key",
         },
       },
       schemas: {

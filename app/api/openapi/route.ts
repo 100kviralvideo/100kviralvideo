@@ -10,6 +10,10 @@ export async function GET() {
     },
     servers: [
       {
+        url: "/",
+        description: "Current site",
+      },
+      {
         url: "https://100kviralvideo.vercel.app",
         description: "Production server",
       },

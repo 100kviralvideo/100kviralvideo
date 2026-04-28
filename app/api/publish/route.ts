@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { uploadYouTubeShort, YouTubePrivacyStatus } from "@/lib/youtube";
 
+export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type PlatformTarget = {
   platform: "youtube_shorts" | "instagram_reels" | "tiktok";
   account_id?: string;
-  privacy?: "private" | "public" | "unlisted";
+  privacy?: YouTubePrivacyStatus;
   publish_at?: string;
 };
 
@@ -23,15 +25,130 @@ type PublishPayload = {
   platforms: PlatformTarget[];
 };
 
+type PlatformResult = {
+  platform: PlatformTarget["platform"] | string;
+  status: string;
+  error?: string;
+  [key: string]: unknown;
+};
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateString(
+  payload: Record<string, unknown>,
+  field: keyof PublishPayload,
+  errors: string[]
+) {
+  if (typeof payload[field] !== "string" || !payload[field].trim()) {
+    errors.push(`${field} is required`);
+  }
+}
+
+function validateBoolean(
+  payload: Record<string, unknown>,
+  field: keyof PublishPayload,
+  errors: string[]
+) {
+  if (typeof payload[field] !== "boolean") {
+    errors.push(`${field} must be a boolean`);
+  }
+}
+
+function validatePublishPayload(value: unknown) {
+  const errors: string[] = [];
+
+  if (!isRecord(value)) {
+    return { payload: null, errors: ["Request body must be a JSON object"] };
+  }
+
+  validateString(value, "job_id", errors);
+  validateString(value, "final_video_url", errors);
+  validateString(value, "title", errors);
+  validateString(value, "caption", errors);
+  validateString(value, "description", errors);
+  validateBoolean(value, "human_approved", errors);
+  validateBoolean(value, "rights_cleared", errors);
+  validateBoolean(value, "ai_generated", errors);
+
+  if (typeof value.duration_sec !== "number") {
+    errors.push("duration_sec must be a number");
+  }
+
+  if (
+    !Array.isArray(value.hashtags) ||
+    value.hashtags.some((hashtag) => typeof hashtag !== "string")
+  ) {
+    errors.push("hashtags must be an array of strings");
+  }
+
+  if (!Array.isArray(value.platforms) || value.platforms.length === 0) {
+    errors.push("platforms must be a non-empty array");
+  } else {
+    value.platforms.forEach((target, index) => {
+      if (!isRecord(target)) {
+        errors.push(`platforms[${index}] must be an object`);
+        return;
+      }
+
+      if (
+        target.platform !== "youtube_shorts" &&
+        target.platform !== "instagram_reels" &&
+        target.platform !== "tiktok"
+      ) {
+        errors.push(`platforms[${index}].platform is invalid`);
+      }
+
+      if (
+        target.privacy !== undefined &&
+        target.privacy !== "private" &&
+        target.privacy !== "public" &&
+        target.privacy !== "unlisted"
+      ) {
+        errors.push(`platforms[${index}].privacy is invalid`);
+      }
+
+      if (
+        target.publish_at !== undefined &&
+        typeof target.publish_at !== "string"
+      ) {
+        errors.push(`platforms[${index}].publish_at must be a string`);
+      }
+    });
+  }
+
+  return {
+    payload: errors.length ? null : (value as PublishPayload),
+    errors,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   const expected = `Bearer ${process.env.PUBLISHER_API_KEY}`;
 
-  if (authHeader !== expected) {
+  if (!process.env.PUBLISHER_API_KEY || authHeader !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = (await req.json()) as PublishPayload;
+  let body: unknown;
+
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { payload, errors } = validatePublishPayload(body);
+
+  if (!payload) {
+    return NextResponse.json({ error: "Invalid request body", errors }, { status: 400 });
+  }
 
   if (!payload.human_approved) {
     return NextResponse.json(
@@ -54,15 +171,34 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const results = [];
+  const results: PlatformResult[] = [];
 
   for (const target of payload.platforms) {
     if (target.platform === "youtube_shorts") {
-      results.push({
-        platform: "youtube_shorts",
-        status: "ready_for_youtube_upload",
-        note: "YouTube upload adapter will be added next.",
-      });
+      try {
+        const upload = await uploadYouTubeShort({
+          finalVideoUrl: payload.final_video_url,
+          title: payload.title,
+          caption: payload.caption,
+          description: payload.description,
+          hashtags: payload.hashtags,
+          aiGenerated: payload.ai_generated,
+          privacy: target.privacy,
+          publishAt: target.publish_at,
+        });
+
+        results.push({
+          platform: "youtube_shorts",
+          status: "uploaded",
+          ...upload,
+        });
+      } catch (error) {
+        results.push({
+          platform: "youtube_shorts",
+          status: "failed",
+          error: errorMessage(error),
+        });
+      }
     }
 
     if (target.platform === "instagram_reels") {
@@ -85,7 +221,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     job_id: payload.job_id,
-    status: "received",
+    status: "processed",
     results,
   });
 }

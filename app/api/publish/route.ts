@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  addPublishHistoryItem({
+  const historyItem = {
     job_id: payload.job_id,
     title: payload.title,
     final_video_url: payload.final_video_url,
@@ -230,7 +230,18 @@ export async function POST(req: NextRequest) {
     status: "processed",
     created_at: new Date().toISOString(),
     results,
-  });
+  };
+
+  try {
+    await addPublishHistoryItem(historyItem);
+  } catch (error) {
+    console.error("Unable to store publish history", error);
+    results.push({
+      platform: "history",
+      status: "failed",
+      error: errorMessage(error),
+    });
+  }
 
   return NextResponse.json({
     job_id: payload.job_id,

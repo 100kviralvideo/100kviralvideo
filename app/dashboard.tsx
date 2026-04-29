@@ -70,6 +70,7 @@ function countPlatformFailures(
 
 export function Dashboard() {
   const [history, setHistory] = useState<PublishHistoryItem[]>([]);
+  const [historySource, setHistorySource] = useState("memory");
   const [config, setConfig] = useState<ConfigStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -83,12 +84,14 @@ export function Dashboard() {
           fetch("/api/config-check", { cache: "no-store" }),
         ]);
         const historyData = (await historyResponse.json()) as {
+          source?: string;
           history?: PublishHistoryItem[];
         };
         const configData = (await configResponse.json()) as ConfigStatus;
 
         if (active) {
           setHistory(historyData.history ?? []);
+          setHistorySource(historyData.source ?? "memory");
           setConfig(configData);
         }
       } finally {
@@ -211,7 +214,9 @@ export function Dashboard() {
           <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
             <h2 className="text-base font-semibold">Clip History</h2>
             <span className="text-sm text-zinc-500">
-              {loading ? "Loading" : "Refreshes every 10 seconds"}
+              {loading
+                ? "Loading"
+                : `Source: ${historySource.replaceAll("_", " ")}. Refreshes every 10 seconds`}
             </span>
           </div>
 

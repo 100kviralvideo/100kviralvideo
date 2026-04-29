@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
-import { getPublishHistory } from "@/lib/publish-history";
+import {
+  getPublishHistory,
+  getPublishHistorySource,
+} from "@/lib/publish-history";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   return NextResponse.json({
-    history: getPublishHistory(),
+    source: getPublishHistorySource(),
+    history: await getPublishHistory(),
   });
 }

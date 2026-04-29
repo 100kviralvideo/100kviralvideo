@@ -1,3 +1,9 @@
+import {
+  appendSheetHistoryItem,
+  isSheetsHistoryConfigured,
+  readSheetHistory,
+} from "@/lib/sheets-history";
+
 export type PlatformHistoryResult = {
   platform: string;
   status: string;
@@ -32,12 +38,31 @@ function getHistoryStore() {
   return globalThis.publishHistory;
 }
 
-export function addPublishHistoryItem(item: PublishHistoryItem) {
+export async function addPublishHistoryItem(item: PublishHistoryItem) {
   const history = getHistoryStore();
   history.unshift(item);
   history.splice(MAX_HISTORY_ITEMS);
+
+  if (!isSheetsHistoryConfigured()) {
+    return;
+  }
+
+  await appendSheetHistoryItem(item);
 }
 
-export function getPublishHistory() {
-  return getHistoryStore();
+export async function getPublishHistory() {
+  if (!isSheetsHistoryConfigured()) {
+    return getHistoryStore();
+  }
+
+  try {
+    return await readSheetHistory(MAX_HISTORY_ITEMS);
+  } catch (error) {
+    console.error("Unable to read publish history from Google Sheets", error);
+    return getHistoryStore();
+  }
+}
+
+export function getPublishHistorySource() {
+  return isSheetsHistoryConfigured() ? "google_sheets" : "memory";
 }

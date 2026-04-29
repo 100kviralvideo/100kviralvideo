@@ -13,10 +13,14 @@ type ConfigStatus = {
 
 type PlatformName = "youtube_shorts" | "instagram_reels" | "tiktok";
 
-const platforms: Array<{ id: PlatformName; label: string }> = [
-  { id: "youtube_shorts", label: "YouTube Shorts" },
-  { id: "instagram_reels", label: "Instagram Reels" },
-  { id: "tiktok", label: "TikTok" },
+const platforms: Array<{ id: PlatformName; label: string; accent: string }> = [
+  { id: "youtube_shorts", label: "YouTube Shorts", accent: "bg-red-600" },
+  {
+    id: "instagram_reels",
+    label: "Instagram Reels",
+    accent: "bg-fuchsia-600",
+  },
+  { id: "tiktok", label: "TikTok", accent: "bg-zinc-950" },
 ];
 
 const statusStyles: Record<string, string> = {
@@ -35,6 +39,45 @@ function StatusBadge({ status }: { status: string }) {
       }`}
     >
       {status.replaceAll("_", " ")}
+    </span>
+  );
+}
+
+function PlatformMark({ platform }: { platform: string }) {
+  if (platform === "youtube_shorts") {
+    return (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-red-600 text-white shadow-sm">
+        <span className="ml-0.5 h-0 w-0 border-y-[7px] border-l-[11px] border-y-transparent border-l-white" />
+      </span>
+    );
+  }
+
+  if (platform === "instagram_reels") {
+    return (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[linear-gradient(135deg,#f97316,#db2777,#4f46e5)] text-white shadow-sm">
+        <span className="relative h-5 w-5 rounded border-2 border-white">
+          <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white" />
+          <span className="absolute right-0.5 top-0.5 h-1 w-1 rounded-full bg-white" />
+        </span>
+      </span>
+    );
+  }
+
+  if (platform === "tiktok") {
+    return (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-zinc-950 text-lg font-black text-white shadow-sm">
+        <span className="relative">
+          <span className="absolute -left-0.5 top-0 text-cyan-300">♪</span>
+          <span className="absolute left-0.5 top-0 text-rose-400">♪</span>
+          <span className="relative">♪</span>
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-zinc-200 text-xs font-semibold text-zinc-600">
+      API
     </span>
   );
 }
@@ -143,6 +186,18 @@ export function Dashboard() {
           <div className="flex flex-wrap gap-2">
             <a
               className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              href="/terms"
+            >
+              Terms
+            </a>
+            <a
+              className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              href="/privacy"
+            >
+              Privacy
+            </a>
+            <a
+              className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
               href="/docs"
             >
               Open Swagger
@@ -190,7 +245,15 @@ export function Dashboard() {
                 key={platform.id}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold">{platform.label}</h2>
+                  <div className="flex items-center gap-3">
+                    <PlatformMark platform={platform.id} />
+                    <div>
+                      <h2 className="text-base font-semibold">
+                        {platform.label}
+                      </h2>
+                      <div className={`mt-1 h-1 w-10 rounded ${platform.accent}`} />
+                    </div>
+                  </div>
                   <StatusBadge
                     status={failures > 0 ? "failed" : total > 0 ? "processed" : "not_implemented_yet"}
                   />
@@ -260,6 +323,7 @@ export function Dashboard() {
                               className="flex flex-wrap items-center gap-2"
                               key={`${result.platform}-${index}`}
                             >
+                              <PlatformMark platform={result.platform} />
                               <span className="min-w-32 font-medium capitalize text-zinc-800">
                                 {result.platform.replaceAll("_", " ")}
                               </span>

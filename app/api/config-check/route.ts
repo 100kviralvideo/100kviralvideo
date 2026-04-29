@@ -27,6 +27,11 @@ export async function GET() {
     tiktok_refresh_token_configured: Boolean(
       process.env.TIKTOK_REFRESH_TOKEN?.trim()
     ),
+    meta_access_token_configured: Boolean(
+      process.env.META_ACCESS_TOKEN?.trim()
+    ),
+    ig_user_id_configured: Boolean(process.env.IG_USER_ID?.trim()),
+    meta_graph_version: process.env.META_GRAPH_VERSION?.trim() || "v25.0",
     google_sheets_spreadsheet_id_configured: Boolean(
       process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim()
     ),

@@ -28,7 +28,7 @@ export async function GET() {
           summary: "Submit a video publish job",
           operationId: "publishVideo",
           description:
-            "Processes each requested platform. YouTube uploads require YouTube OAuth environment variables.",
+            "Processes each requested platform. YouTube uploads require YouTube OAuth environment variables. Instagram Reels requires a clean public MP4 URL and Meta Graph API credentials.",
           security: [
             {
               bearerAuth: [],
@@ -61,7 +61,7 @@ export async function GET() {
                           privacy: "private",
                         },
                         {
-                          platform: "tiktok",
+                          platform: "instagram_reels",
                         },
                       ],
                     },

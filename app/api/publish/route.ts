@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadYouTubeShort, YouTubePrivacyStatus } from "@/lib/youtube";
 import { addPublishHistoryItem } from "@/lib/publish-history";
-import { publishTikTokDirectPost } from "@/lib/tiktok";
+import { publishInstagramReel } from "@/lib/instagram";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -226,20 +226,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (target.platform === "instagram_reels") {
-      results.push({
-        platform: "instagram_reels",
-        status: "not_implemented_yet",
-      });
-    }
-
-    if (target.platform === "tiktok") {
       try {
-        const publish = await publishTikTokDirectPost(payload, target);
+        const publish = await publishInstagramReel(payload, target);
 
         results.push(publish);
       } catch (error) {
         results.push({
-          platform: "tiktok",
+          platform: "instagram_reels",
           status: "failed",
           error: errorMessage(error),
           video_url: payload.final_video_url,
@@ -247,6 +240,16 @@ export async function POST(req: NextRequest) {
           hashtags: payload.hashtags ?? [],
         });
       }
+    }
+
+    if (target.platform === "tiktok") {
+      results.push({
+        platform: "tiktok",
+        status: "needs_manual_action",
+        video_url: payload.final_video_url,
+        caption: payload.caption,
+        hashtags: payload.hashtags ?? [],
+      });
     }
   }
 

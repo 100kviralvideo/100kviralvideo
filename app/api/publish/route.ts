@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadYouTubeShort, YouTubePrivacyStatus } from "@/lib/youtube";
+import { addPublishHistoryItem } from "@/lib/publish-history";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -219,6 +220,17 @@ export async function POST(req: NextRequest) {
       });
     }
   }
+
+  addPublishHistoryItem({
+    job_id: payload.job_id,
+    title: payload.title,
+    final_video_url: payload.final_video_url,
+    duration_sec: payload.duration_sec,
+    ai_generated: payload.ai_generated,
+    status: "processed",
+    created_at: new Date().toISOString(),
+    results,
+  });
 
   return NextResponse.json({
     job_id: payload.job_id,

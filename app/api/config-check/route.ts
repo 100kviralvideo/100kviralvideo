@@ -15,6 +15,18 @@ export async function GET() {
     youtube_refresh_token_configured: Boolean(
       process.env.YOUTUBE_REFRESH_TOKEN?.trim()
     ),
+    tiktok_client_key_configured: Boolean(
+      process.env.TIKTOK_CLIENT_KEY?.trim()
+    ),
+    tiktok_client_secret_configured: Boolean(
+      process.env.TIKTOK_CLIENT_SECRET?.trim()
+    ),
+    tiktok_redirect_uri_configured: Boolean(
+      process.env.TIKTOK_REDIRECT_URI?.trim()
+    ),
+    tiktok_refresh_token_configured: Boolean(
+      process.env.TIKTOK_REFRESH_TOKEN?.trim()
+    ),
     google_sheets_spreadsheet_id_configured: Boolean(
       process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim()
     ),

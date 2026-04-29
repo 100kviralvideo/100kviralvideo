@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadYouTubeShort, YouTubePrivacyStatus } from "@/lib/youtube";
 import { addPublishHistoryItem } from "@/lib/publish-history";
+import { publishTikTokDirectPost } from "@/lib/tiktok";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -9,6 +10,10 @@ type PlatformTarget = {
   platform: "youtube_shorts" | "instagram_reels" | "tiktok";
   account_id?: string;
   privacy?: YouTubePrivacyStatus;
+  privacy_level?: string;
+  disable_duet?: boolean;
+  disable_comment?: boolean;
+  disable_stitch?: boolean;
   publish_at?: string;
 };
 
@@ -120,6 +125,23 @@ function validatePublishPayload(value: unknown) {
       ) {
         errors.push(`platforms[${index}].publish_at must be a string`);
       }
+
+      if (
+        target.privacy_level !== undefined &&
+        typeof target.privacy_level !== "string"
+      ) {
+        errors.push(`platforms[${index}].privacy_level must be a string`);
+      }
+
+      for (const field of [
+        "disable_duet",
+        "disable_comment",
+        "disable_stitch",
+      ]) {
+        if (target[field] !== undefined && typeof target[field] !== "boolean") {
+          errors.push(`platforms[${index}].${field} must be a boolean`);
+        }
+      }
     });
   }
 
@@ -211,13 +233,20 @@ export async function POST(req: NextRequest) {
     }
 
     if (target.platform === "tiktok") {
-      results.push({
-        platform: "tiktok",
-        status: "needs_manual_action",
-        video_url: payload.final_video_url,
-        caption: payload.caption,
-        hashtags: payload.hashtags ?? [],
-      });
+      try {
+        const publish = await publishTikTokDirectPost(payload, target);
+
+        results.push(publish);
+      } catch (error) {
+        results.push({
+          platform: "tiktok",
+          status: "failed",
+          error: errorMessage(error),
+          video_url: payload.final_video_url,
+          caption: payload.caption,
+          hashtags: payload.hashtags ?? [],
+        });
+      }
     }
   }
 

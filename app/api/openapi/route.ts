@@ -129,6 +129,24 @@ export async function GET() {
             privacy: {
               type: "string",
               enum: ["private", "public", "unlisted"],
+              description: "YouTube privacy setting.",
+            },
+            privacy_level: {
+              type: "string",
+              example: "SELF_ONLY",
+              description: "TikTok privacy level from creator_info options.",
+            },
+            disable_duet: {
+              type: "boolean",
+              default: false,
+            },
+            disable_comment: {
+              type: "boolean",
+              default: false,
+            },
+            disable_stitch: {
+              type: "boolean",
+              default: false,
             },
             publish_at: {
               type: "string",

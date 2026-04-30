@@ -7,7 +7,7 @@ import {
   getComfyStorageSettings,
 } from "@/lib/comfy/settings";
 import { buildWorkflow, loadWorkflowApi } from "@/lib/comfy/workflow";
-import { uploadVideoToDrive } from "@/lib/google-drive";
+import { isGoogleDriveConfigured, uploadVideoToDrive } from "@/lib/google-drive";
 
 export type ComfyGenerationOptions = {
   width?: number;
@@ -40,6 +40,7 @@ export async function createImagePaths(jobId: string) {
 
 export async function saveUploadedImage(file: File, savePath: string) {
   const buffer = Buffer.from(await file.arrayBuffer());
+  assertSupportedImageBuffer(buffer, file.name || savePath);
   await writeFile(savePath, buffer);
 }
 
@@ -51,7 +52,40 @@ export async function downloadImage(url: string, savePath: string) {
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
+  assertSupportedImageBuffer(buffer, url);
   await writeFile(savePath, buffer);
+}
+
+function assertSupportedImageBuffer(buffer: Buffer, source: string) {
+  const isPng = buffer.subarray(0, 8).equals(
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  );
+  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  const isWebp =
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP";
+
+  if (!isPng && !isJpeg && !isWebp) {
+    throw new Error(
+      `${source} is not a valid PNG, JPEG, or WEBP image. Check that the image URL is a direct image file, not an HTML page.`
+    );
+  }
+}
+
+function assertDriveUploadConfigReady(settings: ReturnType<typeof getComfySettings>) {
+  if (!settings.uploadToDrive) {
+    return;
+  }
+
+  if (!settings.googleDriveFolderId) {
+    throw new Error("GOOGLE_DRIVE_FOLDER_ID is required when UPLOAD_TO_DRIVE=true");
+  }
+
+  if (!isGoogleDriveConfigured()) {
+    throw new Error(
+      "Google Drive credentials are required when UPLOAD_TO_DRIVE=true. Set GOOGLE_DRIVE_CLIENT_EMAIL and GOOGLE_DRIVE_PRIVATE_KEY, or configure Google Drive OAuth."
+    );
+  }
 }
 
 export async function processComfyVideoJob({
@@ -73,22 +107,10 @@ export async function processComfyVideoJob({
     throw new Error("Comfy job did not return prompt_id after queueing");
   }
 
-  const settings = getComfySettings();
-
-  try {
-    const comfy = new ComfyClient(settings.comfyUrl);
-    const historyItem = await comfy.waitForCompletion({
-      promptId: queuedJob.prompt_id,
-      pollIntervalSeconds: settings.pollIntervalSeconds,
-      timeoutSeconds: settings.jobTimeoutSeconds,
-    });
-    await finalizeComfyVideoJob(jobId, historyItem);
-  } catch (error) {
-    await updateComfyJob(jobId, {
-      status: "failed",
-      error: error instanceof Error ? error.message : "Unknown ComfyUI error",
-    });
-  }
+  await waitForQueuedComfyVideoJob({
+    jobId,
+    promptId: queuedJob.prompt_id,
+  });
 }
 
 export async function queueComfyVideoJob({
@@ -99,6 +121,7 @@ export async function queueComfyVideoJob({
   options = {},
 }: QueuedComfyJobInput) {
   const settings = getComfySettings();
+  assertDriveUploadConfigReady(settings);
 
   try {
     const comfy = new ComfyClient(settings.comfyUrl);
@@ -138,6 +161,31 @@ export async function queueComfyVideoJob({
       error: error instanceof Error ? error.message : "Unknown ComfyUI error",
     });
     throw error;
+  }
+}
+
+export async function waitForQueuedComfyVideoJob({
+  jobId,
+  promptId,
+}: {
+  jobId: string;
+  promptId: string;
+}) {
+  const settings = getComfySettings();
+
+  try {
+    const comfy = new ComfyClient(settings.comfyUrl);
+    const historyItem = await comfy.waitForCompletion({
+      promptId,
+      pollIntervalSeconds: settings.pollIntervalSeconds,
+      timeoutSeconds: settings.jobTimeoutSeconds,
+    });
+    await finalizeComfyVideoJob(jobId, historyItem);
+  } catch (error) {
+    await updateComfyJob(jobId, {
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown ComfyUI error",
+    });
   }
 }
 

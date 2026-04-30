@@ -5,6 +5,7 @@ import {
   createImagePaths,
   downloadImage,
   queueComfyVideoJob,
+  waitForQueuedComfyVideoJob,
   type ComfyGenerationOptions,
 } from "@/lib/comfy/processor";
 
@@ -178,6 +179,13 @@ export async function POST(req: NextRequest) {
       imagePaths: paths,
       options,
     });
+
+    if (job.prompt_id) {
+      void waitForQueuedComfyVideoJob({
+        jobId,
+        promptId: job.prompt_id,
+      });
+    }
 
     return NextResponse.json({
       job_id: jobId,

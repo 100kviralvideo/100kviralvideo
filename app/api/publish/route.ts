@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validatePublisherAuth } from "@/lib/api-auth";
 import { uploadYouTubeShort, YouTubePrivacyStatus } from "@/lib/youtube";
 import { addPublishHistoryItem } from "@/lib/publish-history";
 import { publishInstagramReel } from "@/lib/instagram";
@@ -152,11 +153,7 @@ function validatePublishPayload(value: unknown) {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization")?.trim();
-  const publisherApiKey = process.env.PUBLISHER_API_KEY?.trim();
-  const expected = `Bearer ${publisherApiKey}`;
-
-  if (!publisherApiKey || authHeader !== expected) {
+  if (!validatePublisherAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

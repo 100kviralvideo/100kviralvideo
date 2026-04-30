@@ -304,6 +304,135 @@ export async function GET() {
           },
         },
       },
+      "/api/comfy/generate-video": {
+        post: {
+          summary: "Generate a video from uploaded images with ComfyUI",
+          operationId: "generateComfyVideo",
+          description:
+            "Queues a ComfyUI job from first, middle, and last image uploads plus a prompt. Poll /api/comfy/jobs/{job_id} for completion.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  $ref: "#/components/schemas/ComfyMultipartPayload",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "ComfyUI job queued in ComfyUI",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ComfyQueuedResponse" },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid generation request",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "401": {
+              description: "Missing or invalid bearer token",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/comfy/generate-video-from-urls": {
+        post: {
+          summary: "Generate a video from image URLs with ComfyUI",
+          operationId: "generateComfyVideoFromUrls",
+          description:
+            "Downloads four image URLs, queues the ComfyUI workflow, and returns a job id for polling.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ComfyUrlPayload" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "ComfyUI job queued in ComfyUI",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ComfyQueuedResponse" },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid generation request",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "401": {
+              description: "Missing or invalid bearer token",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/comfy/jobs/{job_id}": {
+        get: {
+          summary: "Get ComfyUI video generation job status",
+          operationId: "getComfyJob",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "job_id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "ComfyUI job status",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ComfyJob" },
+                },
+              },
+            },
+            "401": {
+              description: "Missing or invalid bearer token",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "404": {
+              description: "Job not found",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+          },
+        },
+      },
     },
     components: {
       securitySchemes: {
@@ -564,6 +693,125 @@ export async function GET() {
                 additionalProperties: true,
               },
             },
+          },
+        },
+        ComfyGenerationControls: {
+          type: "object",
+          properties: {
+            width: { type: "number", example: 960 },
+            height: { type: "number", example: 544 },
+            fps: { type: "number", example: 24 },
+            segment_lengths: {
+              type: "array",
+              items: { type: "number" },
+              minItems: 4,
+              maxItems: 4,
+              example: [204, 192, 156, 121],
+              description:
+                "JSON body only. For multipart, send segment_lengths as comma-separated text or segment_1_length through segment_4_length.",
+            },
+            image_strength: { type: "number", example: 0.7 },
+          },
+        },
+        ComfyMultipartPayload: {
+          allOf: [
+            { $ref: "#/components/schemas/ComfyGenerationControls" },
+            {
+              type: "object",
+              required: [
+                "global_prompt",
+                "segment_1_prompt",
+                "segment_2_prompt",
+                "segment_3_prompt",
+                "segment_4_prompt",
+                "segment_1_image",
+                "segment_2_image",
+                "segment_3_image",
+                "segment_4_image",
+              ],
+              properties: {
+                global_prompt: { type: "string" },
+                segment_1_prompt: { type: "string" },
+                segment_2_prompt: { type: "string" },
+                segment_3_prompt: { type: "string" },
+                segment_4_prompt: { type: "string" },
+                segment_1_image: { type: "string", format: "binary" },
+                segment_2_image: { type: "string", format: "binary" },
+                segment_3_image: { type: "string", format: "binary" },
+                segment_4_image: { type: "string", format: "binary" },
+                segment_lengths: {
+                  type: "string",
+                  example: "204,192,156,121",
+                },
+              },
+            },
+          ],
+        },
+        ComfyUrlPayload: {
+          allOf: [
+            { $ref: "#/components/schemas/ComfyGenerationControls" },
+            {
+              type: "object",
+              required: [
+                "global_prompt",
+                "segment_prompts",
+                "segment_1_image_url",
+                "segment_2_image_url",
+                "segment_3_image_url",
+                "segment_4_image_url",
+              ],
+              properties: {
+                global_prompt: { type: "string" },
+                segment_prompts: {
+                  type: "array",
+                  items: { type: "string" },
+                  minItems: 4,
+                  maxItems: 4,
+                },
+                segment_1_image_url: { type: "string", format: "uri" },
+                segment_2_image_url: { type: "string", format: "uri" },
+                segment_3_image_url: { type: "string", format: "uri" },
+                segment_4_image_url: { type: "string", format: "uri" },
+              },
+            },
+          ],
+        },
+        ComfyQueuedResponse: {
+          type: "object",
+          required: ["job_id", "prompt_id", "status"],
+          properties: {
+            job_id: { type: "string" },
+            prompt_id: { type: "string" },
+            status: { type: "string", example: "processing" },
+          },
+        },
+        ComfyJob: {
+          type: "object",
+          required: ["job_id", "status", "created_at", "updated_at"],
+          properties: {
+            job_id: { type: "string" },
+            status: {
+              type: "string",
+              enum: [
+                "queued",
+                "uploading_images_to_comfy",
+                "loading_workflow",
+                "queued_in_comfy",
+                "processing",
+                "downloading_output",
+                "output_downloaded",
+                "uploading_to_drive",
+                "done",
+                "failed",
+              ],
+            },
+            prompt_id: { type: "string" },
+            drive_link: { type: "string", format: "uri" },
+            final_video_url: { type: "string", format: "uri" },
+            local_output_path: { type: "string" },
+            error: { type: "string" },
+            created_at: { type: "string", format: "date-time" },
+            updated_at: { type: "string", format: "date-time" },
           },
         },
         ErrorResponse: {

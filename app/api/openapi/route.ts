@@ -183,7 +183,7 @@ export async function GET() {
           summary: "Generate a video from uploaded images with ComfyUI",
           operationId: "generateComfyVideo",
           description:
-            "Queues a ComfyUI job from four image uploads plus prompts. The API continues the Comfy wait/download/Google Drive upload after the response. The returned status_url can still be used to check progress.",
+            "Queues a ComfyUI job from four image uploads plus prompts. On Vercel without a scheduler, poll the returned status_url until status is done; the status endpoint performs the final download and Google Drive upload.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -228,7 +228,7 @@ export async function GET() {
           summary: "Generate a video from image URLs with ComfyUI",
           operationId: "generateComfyVideoFromUrls",
           description:
-            "Downloads four image URLs and queues the ComfyUI workflow. The API continues the Comfy wait/download/Google Drive upload after the response. The returned status_url can still be used to check progress.",
+            "Downloads four image URLs and queues the ComfyUI workflow. On Vercel without a scheduler, poll the returned status_url until status is done; the status endpoint performs the final download and Google Drive upload.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -610,6 +610,11 @@ export async function GET() {
             },
             prompt_id: { type: "string" },
             comfy_client_id: { type: "string" },
+            auto_upload_mode: {
+              type: "string",
+              enum: ["status_polling", "local_background"],
+            },
+            requires_status_polling: { type: "boolean" },
             status: { type: "string", example: "processing" },
           },
         },

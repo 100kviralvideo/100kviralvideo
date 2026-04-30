@@ -1,6 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { validatePublisherAuth } from "@/lib/api-auth";
-import { createComfyJob, updateComfyJob } from "@/lib/comfy/jobs";
+import { createComfyJob } from "@/lib/comfy/jobs";
 import {
   createImagePaths,
   downloadImage,
@@ -217,28 +217,13 @@ export async function POST(req: NextRequest) {
 
     if (job.prompt_id) {
       if (process.env.VERCEL) {
-        const scheduled = await scheduleComfyCompletionCheck({
+        await scheduleComfyCompletionCheck({
           job_id: jobId,
           prompt_id: job.prompt_id!,
           comfy_client_id: job.comfy_client_id,
           title,
           attempt: 1,
         });
-
-        if (!scheduled) {
-          await updateComfyJob(jobId, {
-            status: "failed",
-            error:
-              "QStash scheduler is not configured. Set QSTASH_TOKEN, COMFY_WORKER_SECRET, and APP_BASE_URL on Vercel for long Comfy jobs.",
-          });
-          return NextResponse.json(
-            {
-              error:
-                "QStash scheduler is not configured. Set QSTASH_TOKEN, COMFY_WORKER_SECRET, and APP_BASE_URL on Vercel so completed Comfy videos are always uploaded to Google Drive.",
-            },
-            { status: 500 }
-          );
-        }
       } else {
         after(async () => {
           const scheduled = await scheduleComfyCompletionCheck({
@@ -269,6 +254,8 @@ export async function POST(req: NextRequest) {
         clientId: job.comfy_client_id,
         title,
       }),
+      auto_upload_mode: process.env.VERCEL ? "status_polling" : "local_background",
+      requires_status_polling: Boolean(process.env.VERCEL),
       prompt_id: job.prompt_id,
       comfy_client_id: job.comfy_client_id,
       status: job.status,

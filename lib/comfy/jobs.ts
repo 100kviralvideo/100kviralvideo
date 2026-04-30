@@ -5,7 +5,7 @@ import { getComfyStorageSettings } from "@/lib/comfy/settings";
 import {
   createGoogleDriveClient,
   escapeDriveQueryValue,
-  isGoogleDriveOAuthConfigured,
+  isGoogleDriveConfigured,
 } from "@/lib/google-drive";
 
 export type ComfyJobStatus =
@@ -45,7 +45,7 @@ function getDriveJobFileName(jobId: string) {
 
 function isDriveJobStoreConfigured() {
   return Boolean(
-    process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() && isGoogleDriveOAuthConfigured()
+    process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() && isGoogleDriveConfigured()
   );
 }
 

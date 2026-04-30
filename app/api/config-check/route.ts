@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  isGoogleDriveConfigured,
+  isGoogleDriveOAuthConfigured,
+  isGoogleDriveServiceAccountConfigured,
+} from "@/lib/google-drive";
 
 export const runtime = "nodejs";
 
@@ -55,6 +60,16 @@ export async function GET() {
     google_drive_refresh_token_configured: Boolean(
       process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim()
     ),
+    google_drive_client_email_configured: Boolean(
+      process.env.GOOGLE_DRIVE_CLIENT_EMAIL?.trim()
+    ),
+    google_drive_private_key_configured: Boolean(
+      process.env.GOOGLE_DRIVE_PRIVATE_KEY?.trim()
+    ),
+    google_drive_service_account_configured:
+      isGoogleDriveServiceAccountConfigured(),
+    google_drive_oauth_configured: isGoogleDriveOAuthConfigured(),
+    google_drive_configured: isGoogleDriveConfigured(),
     comfy_url_configured: Boolean(process.env.COMFY_URL?.trim()),
     comfy_workflow_path: process.env.WORKFLOW_PATH?.trim() || "workflows/workflow_api.json",
     comfy_upload_to_drive: process.env.UPLOAD_TO_DRIVE?.trim() || "true",
@@ -63,10 +78,7 @@ export async function GET() {
     ),
     comfy_job_store_drive_configured: Boolean(
       process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
-        process.env.GOOGLE_DRIVE_CLIENT_ID?.trim() &&
-        process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim() &&
-        process.env.GOOGLE_DRIVE_REDIRECT_URI?.trim() &&
-        process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim()
+        isGoogleDriveConfigured()
     ),
   });
 }

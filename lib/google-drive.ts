@@ -30,6 +30,53 @@ export function isGoogleDriveOAuthConfigured() {
   );
 }
 
+export function isGoogleDriveServiceAccountConfigured() {
+  return Boolean(
+    process.env.GOOGLE_DRIVE_CLIENT_EMAIL?.trim() &&
+      process.env.GOOGLE_DRIVE_PRIVATE_KEY?.trim()
+  );
+}
+
+export function isGoogleDriveConfigured() {
+  return (
+    isGoogleDriveServiceAccountConfigured() || isGoogleDriveOAuthConfigured()
+  );
+}
+
+function normalizePrivateKey(value: string) {
+  return value.replace(/\\n/g, "\n").trim();
+}
+
+function createGoogleDriveServiceAccountAuth() {
+  const clientEmail = getRequiredEnv("GOOGLE_DRIVE_CLIENT_EMAIL");
+  const privateKey = normalizePrivateKey(
+    getRequiredEnv("GOOGLE_DRIVE_PRIVATE_KEY")
+  );
+
+  return new google.auth.JWT({
+    email: clientEmail,
+    key: privateKey,
+    scopes: ["https://www.googleapis.com/auth/drive"],
+  });
+}
+
+function assertGoogleDriveConfigured() {
+  if (isGoogleDriveConfigured()) {
+    return;
+  }
+
+  const missing = [
+    "GOOGLE_DRIVE_CLIENT_EMAIL",
+    "GOOGLE_DRIVE_PRIVATE_KEY",
+  ].filter((name) => !process.env[name]?.trim());
+
+  throw new Error(
+    `Google Drive is not configured. Missing service account env: ${missing.join(
+      ", "
+    )}. Or configure OAuth with GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REDIRECT_URI, and GOOGLE_DRIVE_REFRESH_TOKEN.`
+  );
+}
+
 export function getGoogleDriveAuthUrl() {
   const oauth2Client = createGoogleDriveOAuthClient();
 
@@ -48,6 +95,14 @@ export async function getGoogleDriveTokens(code: string) {
 }
 
 export function createGoogleDriveClient() {
+  assertGoogleDriveConfigured();
+
+  if (isGoogleDriveServiceAccountConfigured()) {
+    const auth = createGoogleDriveServiceAccountAuth();
+
+    return google.drive({ version: "v3", auth });
+  }
+
   const refreshToken = getRequiredEnv("GOOGLE_DRIVE_REFRESH_TOKEN");
   const auth = createGoogleDriveOAuthClient();
   auth.setCredentials({ refresh_token: refreshToken });

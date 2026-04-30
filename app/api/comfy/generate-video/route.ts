@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { validatePublisherAuth } from "@/lib/api-auth";
 import { createComfyJob } from "@/lib/comfy/jobs";
 import {
@@ -10,7 +10,7 @@ import {
 } from "@/lib/comfy/processor";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 800;
 
 function parseOptionalNumber(form: FormData, name: string) {
   const value = form.get(name);
@@ -80,22 +80,6 @@ function getOptionalText(form: FormData, names: string[]) {
   return getPrompt(form, names) || undefined;
 }
 
-function getOptionalUrl(form: FormData, names: string[]) {
-  const value = getOptionalText(form, names);
-
-  if (!value) {
-    return undefined;
-  }
-
-  const url = new URL(value);
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`${names[0]} must be an http or https URL`);
-  }
-
-  return url.toString();
-}
-
 function getSegmentPrompts(form: FormData) {
   const rawSegmentPrompts = form.get("segment_prompts");
 
@@ -126,6 +110,21 @@ function getImageFiles(form: FormData) {
     getRequiredFile(form, "segment_3_image"),
     getRequiredFile(form, "segment_4_image"),
   ];
+}
+
+function buildStatusUrl(jobId: string, promptId: string | undefined, title: string | undefined) {
+  const params = new URLSearchParams();
+
+  if (promptId) {
+    params.set("prompt_id", promptId);
+  }
+
+  if (title) {
+    params.set("title", title);
+  }
+
+  const query = params.toString();
+  return `/api/comfy/jobs/${jobId}${query ? `?${query}` : ""}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -169,17 +168,11 @@ export async function POST(req: NextRequest) {
       image_strength: parseOptionalNumber(form, "image_strength"),
     };
     const title = getOptionalText(form, ["title", "video_title"]);
-    const notifyUrl = getOptionalUrl(form, [
-      "notify_url",
-      "webhook_url",
-      "callback_url",
-    ]);
     const jobId = crypto.randomUUID();
     const paths = await createImagePaths(jobId);
 
     await createComfyJob(jobId, {
       title,
-      notify_url: notifyUrl,
     });
     await Promise.all(
       imageFiles.map((imageFile, index) =>
@@ -196,16 +189,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (job.prompt_id) {
-      void waitForQueuedComfyVideoJob({
-        jobId,
-        promptId: job.prompt_id,
-      });
+      after(() =>
+        waitForQueuedComfyVideoJob({
+          jobId,
+          promptId: job.prompt_id!,
+        })
+      );
     }
 
     return NextResponse.json({
       job_id: jobId,
       title: title || null,
-      notify_url: notifyUrl || null,
+      status_url: buildStatusUrl(jobId, job.prompt_id, title),
       prompt_id: job.prompt_id,
       status: job.status,
     });

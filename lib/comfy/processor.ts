@@ -113,75 +113,6 @@ function buildDriveVideoFileName({
   return `${safeTitle || jobId}${ext}`;
 }
 
-function normalizeNotifyUrl(value: string | undefined) {
-  if (!value) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return undefined;
-    }
-
-    return url.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-async function notifyVideoUploaded({
-  job,
-  driveLink,
-  finalVideoUrl,
-  fileName,
-}: {
-  job: ComfyJobRecord;
-  driveLink: string;
-  finalVideoUrl: string;
-  fileName: string;
-}) {
-  const notifyUrl = normalizeNotifyUrl(job.notify_url);
-
-  if (!notifyUrl) {
-    return;
-  }
-
-  try {
-    const response = await fetch(notifyUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        event: "comfy_video_uploaded",
-        status: "done",
-        job_id: job.job_id,
-        title: job.title || null,
-        file_name: fileName,
-        drive_link: driveLink,
-        final_video_url: finalVideoUrl,
-        local_output_path: job.local_output_path || null,
-        uploaded_at: new Date().toISOString(),
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Webhook failed: ${response.status} ${response.statusText}`);
-    }
-
-    await updateComfyJob(job.job_id, {
-      notification_sent_at: new Date().toISOString(),
-      notification_error: undefined,
-    });
-  } catch (error) {
-    await updateComfyJob(job.job_id, {
-      notification_error:
-        error instanceof Error ? error.message : "Unknown webhook error",
-    });
-  }
-}
-
 export async function processComfyVideoJob({
   jobId,
   globalPrompt,
@@ -325,21 +256,12 @@ async function finalizeComfyVideoJob(jobId: string, historyItem: Parameters<type
     makePublic: settings.googleDrivePublic,
   });
 
-  const updatedJob = await updateComfyJob(jobId, {
+  return updateComfyJob(jobId, {
     status: "done",
     drive_link: upload.drive_link,
     final_video_url: upload.final_video_url,
     local_output_path: localOutputPath,
   });
-
-  await notifyVideoUploaded({
-    job: updatedJob,
-    driveLink: upload.drive_link,
-    finalVideoUrl: upload.final_video_url,
-    fileName: driveFileName,
-  });
-
-  return getComfyJob(jobId);
 }
 
 export async function refreshComfyVideoJob(job: ComfyJobRecord) {

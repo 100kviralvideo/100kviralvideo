@@ -24,13 +24,10 @@ export type ComfyJobRecord = {
   job_id: string;
   status: ComfyJobStatus;
   title?: string;
-  notify_url?: string;
   prompt_id?: string;
   drive_link?: string;
   final_video_url?: string;
   local_output_path?: string;
-  notification_sent_at?: string;
-  notification_error?: string;
   error?: string;
   created_at: string;
   updated_at: string;
@@ -168,7 +165,7 @@ async function loadJob(jobId: string) {
 
 export async function createComfyJob(
   jobId: string,
-  metadata: Pick<ComfyJobRecord, "title" | "notify_url"> = {}
+  metadata: Pick<ComfyJobRecord, "title"> = {}
 ) {
   const now = new Date().toISOString();
   const job: ComfyJobRecord = {

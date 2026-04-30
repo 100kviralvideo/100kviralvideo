@@ -2,7 +2,10 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { ComfyClient, findOutputFile } from "@/lib/comfy/client";
 import { updateComfyJob } from "@/lib/comfy/jobs";
-import { getComfySettings } from "@/lib/comfy/settings";
+import {
+  getComfySettings,
+  getComfyStorageSettings,
+} from "@/lib/comfy/settings";
 import { buildWorkflow, loadWorkflowApi } from "@/lib/comfy/workflow";
 import { uploadVideoToDrive } from "@/lib/google-drive";
 
@@ -23,7 +26,7 @@ export type ComfyProcessJobInput = {
 };
 
 export async function createImagePaths(jobId: string) {
-  const settings = getComfySettings();
+  const settings = getComfyStorageSettings();
   const jobDir = path.join(settings.jobsDir, jobId);
 
   await mkdir(jobDir, { recursive: true });

@@ -72,30 +72,8 @@ export async function GET() {
     google_drive_configured: isGoogleDriveConfigured(),
     comfy_url_configured: Boolean(process.env.COMFY_URL?.trim()),
     comfy_workflow_path: process.env.WORKFLOW_PATH?.trim() || "workflows/workflow_api.json",
-    comfy_upload_to_drive: process.env.UPLOAD_TO_DRIVE?.trim() || "true",
-    comfy_google_drive_folder_id_configured: Boolean(
-      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim()
-    ),
-    comfy_job_store_drive_configured: Boolean(
-      ["1", "true", "yes", "on"].includes(
-        process.env.COMFY_STORE_JOB_JSON_IN_DRIVE?.trim().toLowerCase() || ""
-      ) &&
-        process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
-        isGoogleDriveConfigured()
-    ),
-    comfy_store_job_json_in_drive:
-      process.env.COMFY_STORE_JOB_JSON_IN_DRIVE?.trim() || "false",
-    qstash_token_configured: Boolean(process.env.QSTASH_TOKEN?.trim()),
-    comfy_worker_secret_configured: Boolean(
-      process.env.COMFY_WORKER_SECRET?.trim()
-    ),
-    app_base_url_configured: Boolean(
-      process.env.APP_BASE_URL?.trim() || process.env.VERCEL_URL?.trim()
-    ),
-    comfy_long_job_scheduler_configured: Boolean(
-      process.env.QSTASH_TOKEN?.trim() &&
-        process.env.COMFY_WORKER_SECRET?.trim() &&
-        (process.env.APP_BASE_URL?.trim() || process.env.VERCEL_URL?.trim())
+    comfy_output_node_id_configured: Boolean(
+      process.env.COMFY_OUTPUT_NODE_ID?.trim()
     ),
   });
 }

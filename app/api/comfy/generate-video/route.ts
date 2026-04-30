@@ -8,7 +8,6 @@ import {
   waitForQueuedComfyVideoJob,
   type ComfyGenerationOptions,
 } from "@/lib/comfy/processor";
-import { scheduleComfyCompletionCheck } from "@/lib/comfy/scheduler";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -204,31 +203,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (job.prompt_id) {
-      if (process.env.VERCEL) {
-        await scheduleComfyCompletionCheck({
-          job_id: jobId,
-          prompt_id: job.prompt_id!,
-          comfy_client_id: job.comfy_client_id,
-          title,
-          attempt: 1,
-        });
-      } else {
+      if (!process.env.VERCEL) {
         after(async () => {
-          const scheduled = await scheduleComfyCompletionCheck({
-            job_id: jobId,
-            prompt_id: job.prompt_id!,
-            comfy_client_id: job.comfy_client_id,
-            title,
-            attempt: 1,
+          await waitForQueuedComfyVideoJob({
+            jobId,
+            promptId: job.prompt_id!,
+            clientId: job.comfy_client_id,
           });
-
-          if (!scheduled) {
-            await waitForQueuedComfyVideoJob({
-              jobId,
-              promptId: job.prompt_id!,
-              clientId: job.comfy_client_id,
-            });
-          }
         });
       }
     }
@@ -242,8 +223,6 @@ export async function POST(req: NextRequest) {
         clientId: job.comfy_client_id,
         title,
       }),
-      auto_upload_mode: process.env.VERCEL ? "status_polling" : "local_background",
-      requires_status_polling: Boolean(process.env.VERCEL),
       prompt_id: job.prompt_id,
       comfy_client_id: job.comfy_client_id,
       status: job.status,

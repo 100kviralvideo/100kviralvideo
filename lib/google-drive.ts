@@ -1,6 +1,3 @@
-import { createReadStream } from "fs";
-import { stat } from "fs/promises";
-import path from "path";
 import { google } from "googleapis";
 
 export function getRequiredEnv(name: string) {
@@ -133,68 +130,4 @@ export async function makeDriveFilePublic(fileId: string) {
       throw error;
     }
   }
-}
-
-export async function uploadVideoToDrive({
-  filePath,
-  folderId,
-  fileName,
-  makePublic = true,
-}: {
-  filePath: string;
-  folderId: string;
-  fileName?: string;
-  makePublic?: boolean;
-}) {
-  await stat(filePath);
-
-  const drive = createGoogleDriveClient();
-  const uploadName = fileName || path.basename(filePath);
-  let response;
-
-  try {
-    response = await drive.files.create({
-      requestBody: {
-        name: uploadName,
-        parents: [folderId],
-      },
-      media: {
-        mimeType: "video/mp4",
-        body: createReadStream(filePath),
-      },
-      fields: "id,name,mimeType,size,createdTime,webViewLink,webContentLink",
-      supportsAllDrives: true,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (message.toLowerCase().includes("service accounts do not have storage quota")) {
-      throw new Error(
-        "Google Drive upload failed because Service Accounts do not have My Drive storage quota. For local My Drive uploads, configure Google Drive OAuth env vars (GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REDIRECT_URI, GOOGLE_DRIVE_REFRESH_TOKEN). Or use a Google Shared Drive folder."
-      );
-    }
-
-    throw error;
-  }
-  const file = response.data;
-
-  if (!file.id) {
-    throw new Error("Google Drive returned a file without an id");
-  }
-
-  if (makePublic) {
-    await makeDriveFilePublic(file.id);
-  }
-
-  const refreshed = await drive.files.get({
-    fileId: file.id,
-    fields: "id,name,mimeType,size,createdTime,webViewLink,webContentLink",
-    supportsAllDrives: true,
-  });
-
-  return {
-    file: refreshed.data,
-    drive_link: `https://drive.google.com/file/d/${file.id}/view`,
-    final_video_url: `https://drive.google.com/uc?export=download&id=${file.id}`,
-  };
 }

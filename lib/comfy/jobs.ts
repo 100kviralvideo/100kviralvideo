@@ -1,12 +1,6 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
-import { Readable } from "stream";
 import { getComfyStorageSettings } from "@/lib/comfy/settings";
-import {
-  createGoogleDriveClient,
-  escapeDriveQueryValue,
-  isGoogleDriveConfigured,
-} from "@/lib/google-drive";
 
 export type ComfyJobStatus =
   | "queued"
@@ -14,9 +8,7 @@ export type ComfyJobStatus =
   | "loading_workflow"
   | "queued_in_comfy"
   | "processing"
-  | "downloading_output"
-  | "output_downloaded"
-  | "uploading_to_drive"
+  | "reading_output"
   | "done"
   | "failed";
 
@@ -26,9 +18,9 @@ export type ComfyJobRecord = {
   title?: string;
   prompt_id?: string;
   comfy_client_id?: string;
-  drive_link?: string;
-  final_video_url?: string;
-  local_output_path?: string;
+  output_file_name?: string;
+  output_file_subfolder?: string;
+  output_file_type?: string;
   error?: string;
   created_at: string;
   updated_at: string;
@@ -41,109 +33,10 @@ function getJobRecordPath(jobId: string) {
   return path.join(settings.jobsDir, `${jobId}.json`);
 }
 
-function getDriveJobFileName(jobId: string) {
-  return `comfy-job-${jobId}.json`;
-}
-
-function isDriveJobStoreConfigured() {
-  const shouldStoreJobsInDrive = ["1", "true", "yes", "on"].includes(
-    process.env.COMFY_STORE_JOB_JSON_IN_DRIVE?.trim().toLowerCase() || ""
-  );
-
-  return Boolean(
-    shouldStoreJobsInDrive &&
-      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
-      isGoogleDriveConfigured()
-  );
-}
-
-async function findDriveJobFileId(jobId: string) {
-  if (!isDriveJobStoreConfigured()) {
-    return null;
-  }
-
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID!.trim();
-  const fileName = getDriveJobFileName(jobId);
-  const drive = createGoogleDriveClient();
-  const response = await drive.files.list({
-    q: [
-      `'${escapeDriveQueryValue(folderId)}' in parents`,
-      `name = '${escapeDriveQueryValue(fileName)}'`,
-      "trashed = false",
-    ].join(" and "),
-    fields: "files(id,name)",
-    pageSize: 1,
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true,
-  });
-
-  return response.data.files?.[0]?.id || null;
-}
-
-async function saveDriveJob(job: ComfyJobRecord) {
-  if (!isDriveJobStoreConfigured()) {
-    return;
-  }
-
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID!.trim();
-  const drive = createGoogleDriveClient();
-  const fileName = getDriveJobFileName(job.job_id);
-  const body = Readable.from([JSON.stringify(job, null, 2)]);
-  const existingFileId = await findDriveJobFileId(job.job_id);
-
-  if (existingFileId) {
-    await drive.files.update({
-      fileId: existingFileId,
-      media: {
-        mimeType: "application/json",
-        body,
-      },
-      supportsAllDrives: true,
-    });
-    return;
-  }
-
-  await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: [folderId],
-      mimeType: "application/json",
-    },
-    media: {
-      mimeType: "application/json",
-      body,
-    },
-    fields: "id",
-    supportsAllDrives: true,
-  });
-}
-
-async function loadDriveJob(jobId: string) {
-  const fileId = await findDriveJobFileId(jobId);
-
-  if (!fileId) {
-    return null;
-  }
-
-  const drive = createGoogleDriveClient();
-  const response = await drive.files.get(
-    {
-      fileId,
-      alt: "media",
-      supportsAllDrives: true,
-    },
-    { responseType: "text" }
-  );
-  const job = JSON.parse(String(response.data)) as ComfyJobRecord;
-  jobs.set(jobId, job);
-  return job;
-}
-
 async function saveJob(job: ComfyJobRecord) {
   const filePath = getJobRecordPath(job.job_id);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(job, null, 2));
-  await saveDriveJob(job);
   jobs.set(job.job_id, job);
 }
 
@@ -160,7 +53,7 @@ async function loadJob(jobId: string) {
     jobs.set(jobId, job);
     return job;
   } catch {
-    return loadDriveJob(jobId);
+    return null;
   }
 }
 

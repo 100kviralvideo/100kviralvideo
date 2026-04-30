@@ -1,17 +1,12 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { ComfyClient, findOutputFile } from "@/lib/comfy/client";
-import {
-  getComfyJob,
-  updateComfyJob,
-  type ComfyJobRecord,
-} from "@/lib/comfy/jobs";
+import { updateComfyJob, type ComfyJobRecord } from "@/lib/comfy/jobs";
 import {
   getComfySettings,
   getComfyStorageSettings,
 } from "@/lib/comfy/settings";
 import { buildWorkflow, loadWorkflowApi } from "@/lib/comfy/workflow";
-import { isGoogleDriveConfigured, uploadVideoToDrive } from "@/lib/google-drive";
 
 export type ComfyGenerationOptions = {
   width?: number;
@@ -76,43 +71,6 @@ function assertSupportedImageBuffer(buffer: Buffer, source: string) {
   }
 }
 
-function assertDriveUploadConfigReady(settings: ReturnType<typeof getComfySettings>) {
-  if (!settings.uploadToDrive) {
-    return;
-  }
-
-  if (!settings.googleDriveFolderId) {
-    throw new Error("GOOGLE_DRIVE_FOLDER_ID is required when UPLOAD_TO_DRIVE=true");
-  }
-
-  if (!isGoogleDriveConfigured()) {
-    throw new Error(
-      "Google Drive credentials are required when UPLOAD_TO_DRIVE=true. Set GOOGLE_DRIVE_CLIENT_EMAIL and GOOGLE_DRIVE_PRIVATE_KEY, or configure Google Drive OAuth."
-    );
-  }
-}
-
-function sanitizeDriveFileName(value: string) {
-  return value
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 120);
-}
-
-function buildDriveVideoFileName({
-  title,
-  jobId,
-  ext,
-}: {
-  title?: string;
-  jobId: string;
-  ext: string;
-}) {
-  const safeTitle = title ? sanitizeDriveFileName(title) : "";
-  return `${safeTitle || jobId}${ext}`;
-}
-
 export async function processComfyVideoJob({
   jobId,
   globalPrompt,
@@ -147,7 +105,6 @@ export async function queueComfyVideoJob({
   options = {},
 }: QueuedComfyJobInput) {
   const settings = getComfySettings();
-  assertDriveUploadConfigReady(settings);
 
   try {
     const comfy = new ComfyClient(settings.comfyUrl);
@@ -223,52 +180,15 @@ export async function waitForQueuedComfyVideoJob({
 }
 
 async function finalizeComfyVideoJob(jobId: string, historyItem: Parameters<typeof findOutputFile>[0]) {
+  await updateComfyJob(jobId, { status: "reading_output" });
   const settings = getComfySettings();
-  const comfy = new ComfyClient(settings.comfyUrl);
-  const currentJob = await getComfyJob(jobId);
-
-  await updateComfyJob(jobId, { status: "downloading_output" });
   const outputInfo = findOutputFile(historyItem, settings.outputNodeId);
-  const ext = path.extname(outputInfo.filename) || ".mp4";
-  const outputDir = settings.outputDir;
-  const localOutputPath = path.join(outputDir, `${jobId}${ext}`);
-
-  await mkdir(outputDir, { recursive: true });
-  await comfy.downloadFile(outputInfo, localOutputPath);
-  await updateComfyJob(jobId, {
-    status: "output_downloaded",
-    local_output_path: localOutputPath,
-  });
-
-  if (!settings.uploadToDrive) {
-    return updateComfyJob(jobId, {
-      status: "done",
-      local_output_path: localOutputPath,
-    });
-  }
-
-  if (!settings.googleDriveFolderId) {
-    throw new Error("GOOGLE_DRIVE_FOLDER_ID is required when UPLOAD_TO_DRIVE=true");
-  }
-
-  await updateComfyJob(jobId, { status: "uploading_to_drive" });
-  const driveFileName = buildDriveVideoFileName({
-    title: currentJob?.title,
-    jobId,
-    ext,
-  });
-  const upload = await uploadVideoToDrive({
-    filePath: localOutputPath,
-    folderId: settings.googleDriveFolderId,
-    fileName: driveFileName,
-    makePublic: settings.googleDrivePublic,
-  });
 
   return updateComfyJob(jobId, {
     status: "done",
-    drive_link: upload.drive_link,
-    final_video_url: upload.final_video_url,
-    local_output_path: localOutputPath,
+    output_file_name: outputInfo.filename,
+    output_file_subfolder: outputInfo.subfolder,
+    output_file_type: outputInfo.type,
   });
 }
 

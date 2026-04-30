@@ -7,7 +7,6 @@ import {
   getComfyStorageSettings,
 } from "@/lib/comfy/settings";
 import { buildWorkflow, loadWorkflowApi } from "@/lib/comfy/workflow";
-import { uploadVideoToDrive } from "@/lib/google-drive";
 
 export type ComfyGenerationOptions = {
   width?: number;
@@ -19,6 +18,7 @@ export type ComfyGenerationOptions = {
 
 export type ComfyProcessJobInput = {
   jobId: string;
+  title?: string;
   globalPrompt: string;
   segmentPrompts: string[];
   imagePaths: string[];
@@ -40,6 +40,7 @@ export async function createImagePaths(jobId: string) {
 
 export async function saveUploadedImage(file: File, savePath: string) {
   const buffer = Buffer.from(await file.arrayBuffer());
+  assertSupportedImageBuffer(buffer, file.name || savePath);
   await writeFile(savePath, buffer);
 }
 
@@ -51,11 +52,29 @@ export async function downloadImage(url: string, savePath: string) {
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
+  assertSupportedImageBuffer(buffer, url);
   await writeFile(savePath, buffer);
+}
+
+function assertSupportedImageBuffer(buffer: Buffer, source: string) {
+  const isPng = buffer.subarray(0, 8).equals(
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  );
+  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  const isWebp =
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP";
+
+  if (!isPng && !isJpeg && !isWebp) {
+    throw new Error(
+      `${source} is not a valid PNG, JPEG, or WEBP image. Check that the image URL is a direct image file, not an HTML page.`
+    );
+  }
 }
 
 export async function processComfyVideoJob({
   jobId,
+  title,
   globalPrompt,
   segmentPrompts,
   imagePaths,
@@ -63,6 +82,7 @@ export async function processComfyVideoJob({
 }: ComfyProcessJobInput) {
   const queuedJob = await queueComfyVideoJob({
     jobId,
+    title,
     globalPrompt,
     segmentPrompts,
     imagePaths,
@@ -73,26 +93,16 @@ export async function processComfyVideoJob({
     throw new Error("Comfy job did not return prompt_id after queueing");
   }
 
-  const settings = getComfySettings();
-
-  try {
-    const comfy = new ComfyClient(settings.comfyUrl);
-    const historyItem = await comfy.waitForCompletion({
-      promptId: queuedJob.prompt_id,
-      pollIntervalSeconds: settings.pollIntervalSeconds,
-      timeoutSeconds: settings.jobTimeoutSeconds,
-    });
-    await finalizeComfyVideoJob(jobId, historyItem);
-  } catch (error) {
-    await updateComfyJob(jobId, {
-      status: "failed",
-      error: error instanceof Error ? error.message : "Unknown ComfyUI error",
-    });
-  }
+  await waitForQueuedComfyVideoJob({
+    jobId,
+    promptId: queuedJob.prompt_id,
+    clientId: queuedJob.comfy_client_id,
+  });
 }
 
 export async function queueComfyVideoJob({
   jobId,
+  title,
   globalPrompt,
   segmentPrompts,
   imagePaths,
@@ -122,16 +132,22 @@ export async function queueComfyVideoJob({
       fpsNodeId: settings.fpsNodeId,
       segmentLengthNodeIds: settings.segmentLengthNodeIds,
       imageStrengthNodeId: settings.imageStrengthNodeId,
+      outputNodeId: settings.outputNodeId,
       width: options.width,
       height: options.height,
       fps: options.fps,
       segmentLengths: options.segment_lengths,
       imageStrength: options.image_strength,
+      outputTitle: title,
     });
 
     await updateComfyJob(jobId, { status: "queued_in_comfy" });
-    const promptId = await comfy.queuePrompt(workflow);
-    return updateComfyJob(jobId, { status: "processing", prompt_id: promptId });
+    const queuedPrompt = await comfy.queuePrompt(workflow);
+    return updateComfyJob(jobId, {
+      status: "processing",
+      prompt_id: queuedPrompt.promptId,
+      comfy_client_id: queuedPrompt.clientId,
+    });
   } catch (error) {
     await updateComfyJob(jobId, {
       status: "failed",
@@ -141,47 +157,44 @@ export async function queueComfyVideoJob({
   }
 }
 
-async function finalizeComfyVideoJob(jobId: string, historyItem: Parameters<typeof findOutputFile>[0]) {
+export async function waitForQueuedComfyVideoJob({
+  jobId,
+  promptId,
+  clientId,
+}: {
+  jobId: string;
+  promptId: string;
+  clientId?: string;
+}) {
   const settings = getComfySettings();
-  const comfy = new ComfyClient(settings.comfyUrl);
 
-  await updateComfyJob(jobId, { status: "downloading_output" });
-  const outputInfo = findOutputFile(historyItem, settings.outputNodeId);
-  const ext = path.extname(outputInfo.filename) || ".mp4";
-  const outputDir = settings.outputDir;
-  const localOutputPath = path.join(outputDir, `${jobId}${ext}`);
-
-  await mkdir(outputDir, { recursive: true });
-  await comfy.downloadFile(outputInfo, localOutputPath);
-  await updateComfyJob(jobId, {
-    status: "output_downloaded",
-    local_output_path: localOutputPath,
-  });
-
-  if (!settings.uploadToDrive) {
-    return updateComfyJob(jobId, {
-      status: "done",
-      local_output_path: localOutputPath,
+  try {
+    const comfy = new ComfyClient(settings.comfyUrl);
+    const historyItem = await comfy.waitForCompletion({
+      promptId,
+      clientId,
+      pollIntervalSeconds: settings.pollIntervalSeconds,
+      timeoutSeconds: settings.jobTimeoutSeconds,
+    });
+    await finalizeComfyVideoJob(jobId, historyItem);
+  } catch (error) {
+    await updateComfyJob(jobId, {
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown ComfyUI error",
     });
   }
+}
 
-  if (!settings.googleDriveFolderId) {
-    throw new Error("GOOGLE_DRIVE_FOLDER_ID is required when UPLOAD_TO_DRIVE=true");
-  }
-
-  await updateComfyJob(jobId, { status: "uploading_to_drive" });
-  const upload = await uploadVideoToDrive({
-    filePath: localOutputPath,
-    folderId: settings.googleDriveFolderId,
-    fileName: `${jobId}${ext}`,
-    makePublic: settings.googleDrivePublic,
-  });
+async function finalizeComfyVideoJob(jobId: string, historyItem: Parameters<typeof findOutputFile>[0]) {
+  await updateComfyJob(jobId, { status: "reading_output" });
+  const settings = getComfySettings();
+  const outputInfo = findOutputFile(historyItem, settings.outputNodeId);
 
   return updateComfyJob(jobId, {
     status: "done",
-    drive_link: upload.drive_link,
-    final_video_url: upload.final_video_url,
-    local_output_path: localOutputPath,
+    output_file_name: outputInfo.filename,
+    output_file_subfolder: outputInfo.subfolder,
+    output_file_type: outputInfo.type,
   });
 }
 

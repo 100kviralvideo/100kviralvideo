@@ -349,7 +349,7 @@ export async function GET() {
           summary: "Generate a video from uploaded images with ComfyUI",
           operationId: "generateComfyVideo",
           description:
-            "Queues a ComfyUI job from first, middle, and last image uploads plus a prompt. Poll /api/comfy/jobs/{job_id} for completion.",
+            "Queues a ComfyUI job from four image uploads plus prompts. Google Drive upload is handled outside this app by RunPod.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -394,7 +394,7 @@ export async function GET() {
           summary: "Generate a video from image URLs with ComfyUI",
           operationId: "generateComfyVideoFromUrls",
           description:
-            "Downloads four image URLs, queues the ComfyUI workflow, and returns a job id for polling.",
+            "Downloads four image URLs and queues the ComfyUI workflow. Google Drive upload is handled outside this app by RunPod.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -807,6 +807,12 @@ export async function GET() {
                 "segment_4_image",
               ],
               properties: {
+                title: {
+                  type: "string",
+                  description:
+                    "Used as the ComfyUI output filename prefix.",
+                  example: "My YouTube Short Title",
+                },
                 global_prompt: { type: "string" },
                 segment_1_prompt: { type: "string" },
                 segment_2_prompt: { type: "string" },
@@ -838,6 +844,12 @@ export async function GET() {
                 "segment_4_image_url",
               ],
               properties: {
+                title: {
+                  type: "string",
+                  description:
+                    "Used as the ComfyUI output filename prefix.",
+                  example: "My YouTube Short Title",
+                },
                 global_prompt: { type: "string" },
                 segment_prompts: {
                   type: "array",
@@ -858,7 +870,14 @@ export async function GET() {
           required: ["job_id", "prompt_id", "status"],
           properties: {
             job_id: { type: "string" },
+            title: { type: ["string", "null"] },
+            status_url: {
+              type: "string",
+              example:
+                "/api/comfy/jobs/JOB_ID?prompt_id=PROMPT_ID&client_id=CLIENT_ID&title=Video+Title",
+            },
             prompt_id: { type: "string" },
+            comfy_client_id: { type: "string" },
             status: { type: "string", example: "processing" },
           },
         },
@@ -867,6 +886,7 @@ export async function GET() {
           required: ["job_id", "status", "created_at", "updated_at"],
           properties: {
             job_id: { type: "string" },
+            title: { type: "string" },
             status: {
               type: "string",
               enum: [
@@ -875,17 +895,16 @@ export async function GET() {
                 "loading_workflow",
                 "queued_in_comfy",
                 "processing",
-                "downloading_output",
-                "output_downloaded",
-                "uploading_to_drive",
+                "reading_output",
                 "done",
                 "failed",
               ],
             },
             prompt_id: { type: "string" },
-            drive_link: { type: "string", format: "uri" },
-            final_video_url: { type: "string", format: "uri" },
-            local_output_path: { type: "string" },
+            comfy_client_id: { type: "string" },
+            output_file_name: { type: "string" },
+            output_file_subfolder: { type: "string" },
+            output_file_type: { type: "string" },
             error: { type: "string" },
             created_at: { type: "string", format: "date-time" },
             updated_at: { type: "string", format: "date-time" },

@@ -345,6 +345,33 @@ export async function listPendingPrePublishItems() {
     .reverse();
 }
 
+export async function listHistoryPrePublishItems() {
+  const rows = await readQueueRows();
+
+  return rows
+    .filter((item) => item.status !== "pending")
+    .map((row) => ({
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      job_id: row.job_id,
+      status: row.status,
+      folder_id: row.folder_id,
+      video_filename: row.video_filename,
+      final_video_url: row.final_video_url,
+      drive_file: row.drive_file,
+      title: row.title,
+      caption: row.caption,
+      description: row.description,
+      hashtags: row.hashtags,
+      duration_sec: row.duration_sec,
+      ai_generated: row.ai_generated,
+      platforms: row.platforms,
+      publish_result: row.publish_result,
+      error: row.error,
+    }))
+    .reverse();
+}
+
 export async function getLatestPrePublishItem(jobId: string) {
   const rows = await readQueueRows();
   const item = [...rows].reverse().find((row) => row.job_id === jobId);

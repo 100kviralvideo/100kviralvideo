@@ -313,8 +313,155 @@ function PendingClipCard({
   );
 }
 
+function HistoryClipCard({ item }: { item: PrePublishQueueItem }) {
+  const hashtags = useMemo(
+    () => item.hashtags.map(formatHashtag).filter(Boolean),
+    [item.hashtags]
+  );
+
+  return (
+    <article className="grid gap-5 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(280px,420px)_1fr]">
+      <div className="overflow-hidden rounded bg-zinc-950">
+        <iframe
+          allow="autoplay; fullscreen"
+          className="aspect-[9/16] max-h-[620px] w-full border-0 bg-zinc-950 object-contain"
+          src={
+            item.drive_file?.web_view_link
+              ? item.drive_file.web_view_link.replace(/\/view.*/, "/preview")
+              : item.final_video_url
+          }
+        />
+      </div>
+
+      <div className="flex min-w-0 flex-col">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">
+              {item.job_id}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-zinc-950">
+              {item.title}
+            </h2>
+          </div>
+          <span className={`rounded px-2 py-1 text-xs font-medium ring-1 capitalize ${
+            item.status === 'published' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' :
+            item.status === 'failed' ? 'bg-rose-50 text-rose-800 ring-rose-200' :
+            item.status === 'publishing' ? 'bg-blue-50 text-blue-800 ring-blue-200' :
+            'bg-zinc-50 text-zinc-800 ring-zinc-200'
+          }`}>
+            {item.status}
+          </span>
+        </div>
+
+        <dl className="mt-5 grid gap-4 text-sm opacity-90">
+          <div>
+            <dt className="font-medium text-zinc-950">Caption</dt>
+            <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+              {item.caption}
+            </dd>
+          </div>
+
+          {item.description ? (
+            <div>
+              <dt className="font-medium text-zinc-950">Description</dt>
+              <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+                {item.description}
+              </dd>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="font-medium text-zinc-950">Duration</dt>
+              <dd className="mt-1 text-zinc-700">
+                {item.duration_sec ? `${item.duration_sec}s` : "Unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-zinc-950">Updated</dt>
+              <dd className="mt-1 text-zinc-700">
+                {formatDate(item.updated_at)}
+              </dd>
+            </div>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Hashtags</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {hashtags.length ? (
+                hashtags.map((hashtag) => (
+                  <span
+                    className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700"
+                    key={hashtag}
+                  >
+                    {hashtag}
+                  </span>
+                ))
+              ) : (
+                <span className="text-zinc-500">No hashtags</span>
+              )}
+            </dd>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Platforms</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {item.platforms.map((target) => (
+                <span
+                  className="inline-flex items-center gap-2 rounded border border-zinc-200 bg-white px-2 py-1 text-sm font-medium text-zinc-800"
+                  key={`${item.job_id}-${target.platform}`}
+                >
+                  <PlatformMark platform={target.platform} />
+                  {platformLabels[target.platform] ?? target.platform}
+                </span>
+              ))}
+            </dd>
+          </div>
+          
+          {item.error ? (
+            <div>
+              <dt className="font-medium text-rose-700">Error Message</dt>
+              <dd className="mt-1 text-rose-600 font-mono text-xs p-2 bg-rose-50 border border-rose-100 rounded">
+                {item.error}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-4">
+          <a
+            className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            href={item.drive_file?.web_view_link || item.final_video_url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open Drive Video
+          </a>
+          {item.publish_result && Array.isArray((item.publish_result as any).results) ? (
+            (item.publish_result as any).results.map((res: any, idx: number) => 
+              res.youtube_url ? (
+                <a
+                  key={idx}
+                  className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 flex items-center gap-2"
+                  href={res.youtube_url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <PlatformMark platform="youtube_shorts" /> View on YouTube
+                </a>
+              ) : null
+            )
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export function Dashboard() {
+  const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [items, setItems] = useState<PrePublishQueueItem[]>([]);
+  const [historyItems, setHistoryItems] = useState<PrePublishQueueItem[]>([]);
   const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -340,6 +487,18 @@ export function Dashboard() {
     }
   }
 
+  async function loadHistory() {
+    try {
+      const response = await fetch("/api/pre-publish/history", {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      setHistoryItems(data.items ?? []);
+    } catch (loadError) {
+      console.error("Failed to load history", loadError);
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -348,7 +507,7 @@ export function Dashboard() {
         return;
       }
 
-      await loadPending();
+      await Promise.all([loadPending(), loadHistory()]);
     }
 
     refresh();
@@ -399,7 +558,7 @@ export function Dashboard() {
           <div>
             <p className="text-sm font-medium text-zinc-500">Publisher API</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-normal text-zinc-950 sm:text-3xl">
-              Clips Waiting For Approval
+              {activeTab === "pending" ? "Clips Waiting For Approval" : "Publish History"}
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -446,28 +605,77 @@ export function Dashboard() {
           <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center text-sm font-medium text-zinc-500">
             Loading clips...
           </section>
-        ) : items.length === 0 ? (
-          <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
-            <h2 className="text-lg font-semibold text-zinc-950">
-              No clips are waiting for approval
-            </h2>
-            <p className="mt-2 text-sm text-zinc-500">
-              New items will appear here after /api/pre-publish finds the final
-              Drive video.
-            </p>
-          </section>
         ) : (
-          <section className="grid gap-5">
-            {items.map((item) => (
-              <PendingClipCard
-                approving={approvingJobId === item.job_id}
-                item={item}
-                key={`${item.job_id}-${item.created_at}`}
-                onApprove={approve}
-                onUpdate={loadPending}
-              />
-            ))}
-          </section>
+          <>
+            <div className="mb-6 flex gap-6 border-b border-zinc-200">
+              <button
+                className={`border-b-2 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "pending"
+                    ? "border-zinc-950 text-zinc-950"
+                    : "border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300"
+                }`}
+                onClick={() => setActiveTab("pending")}
+              >
+                Pending Approval ({items.length})
+              </button>
+              <button
+                className={`border-b-2 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "history"
+                    ? "border-zinc-950 text-zinc-950"
+                    : "border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300"
+                }`}
+                onClick={() => setActiveTab("history")}
+              >
+                Publish History ({historyItems.length})
+              </button>
+            </div>
+
+            {activeTab === "pending" ? (
+              items.length === 0 ? (
+                <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
+                  <h2 className="text-lg font-semibold text-zinc-950">
+                    No clips are waiting for approval
+                  </h2>
+                  <p className="mt-2 text-sm text-zinc-500">
+                    New items will appear here after /api/pre-publish finds the final
+                    Drive video.
+                  </p>
+                </section>
+              ) : (
+                <section className="grid gap-5">
+                  {items.map((item) => (
+                    <PendingClipCard
+                      approving={approvingJobId === item.job_id}
+                      item={item}
+                      key={`${item.job_id}-${item.created_at}`}
+                      onApprove={approve}
+                      onUpdate={loadPending}
+                    />
+                  ))}
+                </section>
+              )
+            ) : (
+              historyItems.length === 0 ? (
+                <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
+                  <h2 className="text-lg font-semibold text-zinc-950">
+                    No history items yet
+                  </h2>
+                  <p className="mt-2 text-sm text-zinc-500">
+                    Approved or failed clips will appear here.
+                  </p>
+                </section>
+              ) : (
+                <section className="grid gap-5">
+                  {historyItems.map((item) => (
+                    <HistoryClipCard
+                      item={item}
+                      key={`${item.job_id}-${item.updated_at}`}
+                    />
+                  ))}
+                </section>
+              )
+            )}
+          </>
         )}
       </div>
     </main>

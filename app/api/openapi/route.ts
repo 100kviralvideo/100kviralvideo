@@ -23,6 +23,80 @@ export async function GET() {
       },
     ],
     paths: {
+      "/api/drive/find-video": {
+        post: {
+          summary: "Find a generated video in Google Drive",
+          operationId: "findDriveVideo",
+          description:
+            "Finds a named video file inside a specific Google Drive folder, makes it publicly readable, and returns a direct download URL for publishing.",
+          security: [
+            {
+              bearerAuth: [],
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/FindDriveVideoPayload",
+                },
+                examples: {
+                  findVideo: {
+                    summary: "Find final rendered clip",
+                    value: {
+                      folder_id: "1abcDriveFolderId",
+                      video_filename: "clip_xxx_final.mp4",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Newest matching video file selected",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/FindDriveVideoResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid find-video request",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+            "401": {
+              description: "Missing or invalid bearer token",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+            "404": {
+              description: "No matching video file found in the requested folder",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/publish": {
         post: {
           summary: "Submit a video publish job",
@@ -115,6 +189,73 @@ export async function GET() {
         },
       },
       schemas: {
+        FindDriveVideoPayload: {
+          type: "object",
+          required: ["folder_id", "video_filename"],
+          properties: {
+            folder_id: {
+              type: "string",
+              description: "Google Drive folder ID to search inside.",
+            },
+            video_filename: {
+              type: "string",
+              example: "clip_xxx_final.mp4",
+            },
+          },
+          additionalProperties: false,
+        },
+        FindDriveVideoResponse: {
+          type: "object",
+          required: [
+            "success",
+            "file_id",
+            "name",
+            "final_video_url",
+            "warning",
+          ],
+          properties: {
+            success: {
+              type: "boolean",
+              example: true,
+            },
+            file_id: {
+              type: "string",
+            },
+            name: {
+              type: "string",
+            },
+            mime_type: {
+              type: "string",
+              example: "video/mp4",
+            },
+            size: {
+              type: "string",
+              description: "File size in bytes, as returned by Google Drive.",
+            },
+            created_time: {
+              type: "string",
+              format: "date-time",
+            },
+            web_view_link: {
+              type: "string",
+              format: "uri",
+            },
+            web_content_link: {
+              type: "string",
+              format: "uri",
+            },
+            final_video_url: {
+              type: "string",
+              format: "uri",
+              example:
+                "https://drive.google.com/uc?export=download&id=FILE_ID",
+            },
+            warning: {
+              type: ["string", "null"],
+              example: "Multiple files found; newest file selected.",
+            },
+          },
+        },
         PlatformTarget: {
           type: "object",
           required: ["platform"],

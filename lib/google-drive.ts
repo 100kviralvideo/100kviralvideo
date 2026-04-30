@@ -97,15 +97,15 @@ export async function getGoogleDriveTokens(code: string) {
 export function createGoogleDriveClient() {
   assertGoogleDriveConfigured();
 
-  if (isGoogleDriveServiceAccountConfigured()) {
-    const auth = createGoogleDriveServiceAccountAuth();
+  if (isGoogleDriveOAuthConfigured()) {
+    const refreshToken = getRequiredEnv("GOOGLE_DRIVE_REFRESH_TOKEN");
+    const auth = createGoogleDriveOAuthClient();
+    auth.setCredentials({ refresh_token: refreshToken });
 
     return google.drive({ version: "v3", auth });
   }
 
-  const refreshToken = getRequiredEnv("GOOGLE_DRIVE_REFRESH_TOKEN");
-  const auth = createGoogleDriveOAuthClient();
-  auth.setCredentials({ refresh_token: refreshToken });
+  const auth = createGoogleDriveServiceAccountAuth();
 
   return google.drive({ version: "v3", auth });
 }
@@ -150,18 +150,32 @@ export async function uploadVideoToDrive({
 
   const drive = createGoogleDriveClient();
   const uploadName = fileName || path.basename(filePath);
-  const response = await drive.files.create({
-    requestBody: {
-      name: uploadName,
-      parents: [folderId],
-    },
-    media: {
-      mimeType: "video/mp4",
-      body: createReadStream(filePath),
-    },
-    fields: "id,name,mimeType,size,createdTime,webViewLink,webContentLink",
-    supportsAllDrives: true,
-  });
+  let response;
+
+  try {
+    response = await drive.files.create({
+      requestBody: {
+        name: uploadName,
+        parents: [folderId],
+      },
+      media: {
+        mimeType: "video/mp4",
+        body: createReadStream(filePath),
+      },
+      fields: "id,name,mimeType,size,createdTime,webViewLink,webContentLink",
+      supportsAllDrives: true,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.toLowerCase().includes("service accounts do not have storage quota")) {
+      throw new Error(
+        "Google Drive upload failed because Service Accounts do not have My Drive storage quota. For local My Drive uploads, configure Google Drive OAuth env vars (GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REDIRECT_URI, GOOGLE_DRIVE_REFRESH_TOKEN). Or use a Google Shared Drive folder."
+      );
+    }
+
+    throw error;
+  }
   const file = response.data;
 
   if (!file.id) {

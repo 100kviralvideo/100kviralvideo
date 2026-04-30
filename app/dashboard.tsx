@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { PrePublishQueueItem } from "@/lib/prepublish-queue";
 
 type PendingResponse = {
@@ -17,21 +17,23 @@ const platformLabels: Record<PlatformName, string> = {
   tiktok: "TikTok",
 };
 
-function PlatformMark({ platform }: { platform: string }) {
+function PlatformMark({ platform, small }: { platform: string; small?: boolean }) {
+  const sizeClass = small ? "h-6 w-6 text-[10px]" : "h-9 w-9 text-xs";
+
   if (platform === "youtube_shorts") {
     return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-red-600 text-white shadow-sm">
-        <span className="ml-0.5 h-0 w-0 border-y-[7px] border-l-[11px] border-y-transparent border-l-white" />
+      <span className={`flex shrink-0 items-center justify-center rounded bg-red-600 text-white shadow-sm ${sizeClass}`}>
+        <span className={small ? "ml-[1px] h-0 w-0 border-y-[4px] border-l-[6px] border-y-transparent border-l-white" : "ml-0.5 h-0 w-0 border-y-[7px] border-l-[11px] border-y-transparent border-l-white"} />
       </span>
     );
   }
 
   if (platform === "instagram_reels") {
     return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[linear-gradient(135deg,#f97316,#db2777,#4f46e5)] text-white shadow-sm">
-        <span className="relative h-5 w-5 rounded border-2 border-white">
-          <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white" />
-          <span className="absolute right-0.5 top-0.5 h-1 w-1 rounded-full bg-white" />
+      <span className={`flex shrink-0 items-center justify-center rounded bg-[linear-gradient(135deg,#f97316,#db2777,#4f46e5)] text-white shadow-sm ${sizeClass}`}>
+        <span className={`relative rounded border-2 border-white ${small ? "h-3.5 w-3.5 border-[1.5px]" : "h-5 w-5 border-2"}`}>
+          <span className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white ${small ? "h-1 w-1" : "h-1.5 w-1.5"}`} />
+          <span className={`absolute right-[1px] top-[1px] rounded-full bg-white ${small ? "h-[2px] w-[2px]" : "h-1 w-1"}`} />
         </span>
       </span>
     );
@@ -39,7 +41,7 @@ function PlatformMark({ platform }: { platform: string }) {
 
   if (platform === "tiktok") {
     return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-zinc-950 text-lg font-black text-white shadow-sm">
+      <span className={`flex shrink-0 items-center justify-center rounded bg-zinc-950 font-black text-white shadow-sm ${sizeClass} ${small ? "text-[10px]" : "text-lg"}`}>
         <span className="relative">
           <span className="absolute -left-0.5 top-0 text-cyan-300">T</span>
           <span className="absolute left-0.5 top-0 text-rose-400">T</span>
@@ -50,8 +52,26 @@ function PlatformMark({ platform }: { platform: string }) {
   }
 
   return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-zinc-200 text-xs font-semibold text-zinc-600">
+    <span className={`flex shrink-0 items-center justify-center rounded bg-zinc-200 font-semibold text-zinc-600 ${sizeClass}`}>
       API
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: PrePublishQueueItem["status"] }) {
+  const styles = {
+    published: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+    failed: "bg-rose-50 text-rose-800 ring-rose-200",
+    publishing: "bg-blue-50 text-blue-800 ring-blue-200",
+    pending: "bg-amber-50 text-amber-800 ring-amber-200",
+  };
+  return (
+    <span
+      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${
+        styles[status] || "bg-zinc-50 text-zinc-800 ring-zinc-200"
+      }`}
+    >
+      {status}
     </span>
   );
 }
@@ -135,7 +155,7 @@ function PendingClipCard({
   }
 
   return (
-    <article className="grid gap-5 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(280px,420px)_1fr]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
       <div className="overflow-hidden rounded bg-zinc-950">
         <iframe
           allow="autoplay; fullscreen"
@@ -166,9 +186,6 @@ function PendingClipCard({
               </h2>
             )}
           </div>
-          <span className="rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
-            waiting approval
-          </span>
         </div>
 
         <dl className="mt-5 grid gap-4 text-sm">
@@ -309,7 +326,7 @@ function PendingClipCard({
           )}
         </div>
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -320,7 +337,7 @@ function HistoryClipCard({ item }: { item: PrePublishQueueItem }) {
   );
 
   return (
-    <article className="grid gap-5 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(280px,420px)_1fr]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
       <div className="overflow-hidden rounded bg-zinc-950">
         <iframe
           allow="autoplay; fullscreen"
@@ -343,14 +360,6 @@ function HistoryClipCard({ item }: { item: PrePublishQueueItem }) {
               {item.title}
             </h2>
           </div>
-          <span className={`rounded px-2 py-1 text-xs font-medium ring-1 capitalize ${
-            item.status === 'published' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' :
-            item.status === 'failed' ? 'bg-rose-50 text-rose-800 ring-rose-200' :
-            item.status === 'publishing' ? 'bg-blue-50 text-blue-800 ring-blue-200' :
-            'bg-zinc-50 text-zinc-800 ring-zinc-200'
-          }`}>
-            {item.status}
-          </span>
         </div>
 
         <dl className="mt-5 grid gap-4 text-sm opacity-90">
@@ -454,7 +463,132 @@ function HistoryClipCard({ item }: { item: PrePublishQueueItem }) {
           ) : null}
         </div>
       </div>
-    </article>
+    </div>
+  );
+}
+
+function PendingTable({
+  items,
+  approvingJobId,
+  onApprove,
+  onUpdate,
+}: {
+  items: PrePublishQueueItem[];
+  approvingJobId: string | null;
+  onApprove: (jobId: string) => void;
+  onUpdate: () => void;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <table className="w-full text-left text-sm text-zinc-600">
+        <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500 whitespace-nowrap">
+          <tr>
+            <th className="px-4 py-3 font-medium">Job ID</th>
+            <th className="px-4 py-3 font-medium">Title</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium">Created</th>
+            <th className="px-4 py-3 font-medium">Platforms</th>
+            <th className="px-4 py-3 font-medium text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-200">
+          {items.map((item) => (
+            <Fragment key={item.job_id}>
+              <tr className="hover:bg-zinc-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-zinc-950 uppercase whitespace-nowrap">{item.job_id}</td>
+                <td className="px-4 py-3 w-full max-w-[200px] sm:max-w-[300px] truncate" title={item.title}>{item.title}</td>
+                <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={item.status} /></td>
+                <td className="px-4 py-3 whitespace-nowrap">{formatDate(item.created_at)}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex gap-1">
+                    {item.platforms.map((p) => (
+                      <PlatformMark key={p.platform} platform={p.platform} small />
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">
+                  <button
+                    onClick={() => setExpandedId(expandedId === item.job_id ? null : item.job_id)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                  >
+                    {expandedId === item.job_id ? "Close" : "Review"}
+                  </button>
+                </td>
+              </tr>
+              {expandedId === item.job_id && (
+                <tr>
+                  <td colSpan={6} className="bg-zinc-50/50 p-4 sm:p-6 border-t border-zinc-100">
+                    <PendingClipCard
+                      item={item}
+                      approving={approvingJobId === item.job_id}
+                      onApprove={onApprove}
+                      onUpdate={onUpdate}
+                    />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HistoryTable({ items }: { items: PrePublishQueueItem[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <table className="w-full text-left text-sm text-zinc-600">
+        <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500 whitespace-nowrap">
+          <tr>
+            <th className="px-4 py-3 font-medium">Job ID</th>
+            <th className="px-4 py-3 font-medium">Title</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium">Updated</th>
+            <th className="px-4 py-3 font-medium">Platforms</th>
+            <th className="px-4 py-3 font-medium text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-200">
+          {items.map((item) => (
+            <Fragment key={item.job_id}>
+              <tr className="hover:bg-zinc-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-zinc-950 uppercase whitespace-nowrap">{item.job_id}</td>
+                <td className="px-4 py-3 w-full max-w-[200px] sm:max-w-[300px] truncate" title={item.title}>{item.title}</td>
+                <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={item.status} /></td>
+                <td className="px-4 py-3 whitespace-nowrap">{formatDate(item.updated_at)}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex gap-1">
+                    {item.platforms.map((p) => (
+                      <PlatformMark key={p.platform} platform={p.platform} small />
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">
+                  <button
+                    onClick={() => setExpandedId(expandedId === item.job_id ? null : item.job_id)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                  >
+                    {expandedId === item.job_id ? "Close" : "Details"}
+                  </button>
+                </td>
+              </tr>
+              {expandedId === item.job_id && (
+                <tr>
+                  <td colSpan={6} className="bg-zinc-50/50 p-4 sm:p-6 border-t border-zinc-100">
+                    <HistoryClipCard item={item} />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -642,17 +776,12 @@ export function Dashboard() {
                   </p>
                 </section>
               ) : (
-                <section className="grid gap-5">
-                  {items.map((item) => (
-                    <PendingClipCard
-                      approving={approvingJobId === item.job_id}
-                      item={item}
-                      key={`${item.job_id}-${item.created_at}`}
-                      onApprove={approve}
-                      onUpdate={loadPending}
-                    />
-                  ))}
-                </section>
+                <PendingTable
+                  items={items}
+                  approvingJobId={approvingJobId}
+                  onApprove={approve}
+                  onUpdate={loadPending}
+                />
               )
             ) : (
               historyItems.length === 0 ? (
@@ -665,14 +794,7 @@ export function Dashboard() {
                   </p>
                 </section>
               ) : (
-                <section className="grid gap-5">
-                  {historyItems.map((item) => (
-                    <HistoryClipCard
-                      item={item}
-                      key={`${item.job_id}-${item.updated_at}`}
-                    />
-                  ))}
-                </section>
+                <HistoryTable items={historyItems} />
               )
             )}
           </>

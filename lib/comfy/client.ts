@@ -19,10 +19,29 @@ type ComfyHistoryItem = {
   };
 };
 
+type ComfySocketMessage = {
+  type?: string;
+  data?: {
+    node?: string | null;
+    prompt_id?: string;
+    exception_message?: string;
+    exception_type?: string;
+    [key: string]: unknown;
+  };
+};
+
 function assertOk(response: Response, context: string) {
   if (!response.ok) {
     throw new Error(`${context} failed: ${response.status} ${response.statusText}`);
   }
+}
+
+function getComfyWebSocketUrl(baseUrl: string, clientId: string) {
+  const url = new URL(baseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "/ws";
+  url.search = new URLSearchParams({ clientId }).toString();
+  return url.toString();
 }
 
 export class ComfyClient {
@@ -71,7 +90,7 @@ export class ComfyClient {
     return data.name;
   }
 
-  async queuePrompt(workflow: ComfyWorkflow) {
+  async queuePrompt(workflow: ComfyWorkflow, clientId = crypto.randomUUID()) {
     const response = await this.fetchWithTimeout(`${this.baseUrl}/prompt`, {
       method: "POST",
       headers: {
@@ -79,7 +98,7 @@ export class ComfyClient {
       },
       body: JSON.stringify({
         prompt: workflow,
-        client_id: crypto.randomUUID(),
+        client_id: clientId,
       }),
     });
     assertOk(response, "ComfyUI prompt queue");
@@ -90,7 +109,10 @@ export class ComfyClient {
       throw new Error(`ComfyUI did not return prompt_id: ${JSON.stringify(data)}`);
     }
 
-    return data.prompt_id;
+    return {
+      promptId: data.prompt_id,
+      clientId,
+    };
   }
 
   async getHistory(promptId: string) {
@@ -103,6 +125,122 @@ export class ComfyClient {
   }
 
   async waitForCompletion({
+    promptId,
+    clientId,
+    pollIntervalSeconds,
+    timeoutSeconds,
+  }: {
+    promptId: string;
+    clientId?: string;
+    pollIntervalSeconds: number;
+    timeoutSeconds: number;
+  }) {
+    if (clientId) {
+      try {
+        await this.waitForCompletionEvent({
+          promptId,
+          clientId,
+          timeoutSeconds,
+        });
+
+        return this.waitForHistoryItem({
+          promptId,
+          pollIntervalSeconds,
+          timeoutSeconds: 30,
+        });
+      } catch {
+        return this.waitForHistoryItem({
+          promptId,
+          pollIntervalSeconds,
+          timeoutSeconds,
+        });
+      }
+    }
+
+    return this.waitForHistoryItem({
+      promptId,
+      pollIntervalSeconds,
+      timeoutSeconds,
+    });
+  }
+
+  private async waitForCompletionEvent({
+    promptId,
+    clientId,
+    timeoutSeconds,
+  }: {
+    promptId: string;
+    clientId: string;
+    timeoutSeconds: number;
+  }) {
+    const existingHistory = await this.getHistory(promptId);
+    const existingItem = existingHistory[promptId];
+
+    if (existingItem) {
+      if (existingItem.status?.status_str === "error") {
+        throw new Error(`ComfyUI workflow failed: ${JSON.stringify(existingItem.status)}`);
+      }
+
+      return;
+    }
+
+    const wsUrl = getComfyWebSocketUrl(this.baseUrl, clientId);
+
+    await new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(wsUrl);
+      const timeout = setTimeout(() => {
+        socket.close();
+        reject(new Error(`Timed out waiting for ComfyUI websocket prompt_id=${promptId}`));
+      }, timeoutSeconds * 1000);
+
+      socket.addEventListener("message", (event) => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+
+        let message: ComfySocketMessage;
+
+        try {
+          message = JSON.parse(event.data) as ComfySocketMessage;
+        } catch {
+          return;
+        }
+
+        if (message.data?.prompt_id !== promptId) {
+          return;
+        }
+
+        if (message.type === "execution_error") {
+          clearTimeout(timeout);
+          socket.close();
+          reject(
+            new Error(
+              `ComfyUI workflow failed: ${
+                message.data.exception_message ||
+                message.data.exception_type ||
+                JSON.stringify(message.data)
+              }`
+            )
+          );
+          return;
+        }
+
+        if (message.type === "executing" && message.data.node === null) {
+          clearTimeout(timeout);
+          socket.close();
+          resolve();
+        }
+      });
+
+      socket.addEventListener("error", () => {
+        clearTimeout(timeout);
+        socket.close();
+        reject(new Error("ComfyUI websocket connection failed"));
+      });
+    });
+  }
+
+  private async waitForHistoryItem({
     promptId,
     pollIntervalSeconds,
     timeoutSeconds,

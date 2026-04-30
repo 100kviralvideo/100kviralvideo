@@ -97,15 +97,15 @@ export async function getGoogleDriveTokens(code: string) {
 export function createGoogleDriveClient() {
   assertGoogleDriveConfigured();
 
-  if (isGoogleDriveServiceAccountConfigured()) {
-    const auth = createGoogleDriveServiceAccountAuth();
+  if (isGoogleDriveOAuthConfigured()) {
+    const refreshToken = getRequiredEnv("GOOGLE_DRIVE_REFRESH_TOKEN");
+    const auth = createGoogleDriveOAuthClient();
+    auth.setCredentials({ refresh_token: refreshToken });
 
     return google.drive({ version: "v3", auth });
   }
 
-  const refreshToken = getRequiredEnv("GOOGLE_DRIVE_REFRESH_TOKEN");
-  const auth = createGoogleDriveOAuthClient();
-  auth.setCredentials({ refresh_token: refreshToken });
+  const auth = createGoogleDriveServiceAccountAuth();
 
   return google.drive({ version: "v3", auth });
 }

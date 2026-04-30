@@ -21,16 +21,6 @@ function optionalNumber(name: string) {
   return value === undefined ? undefined : Number(value);
 }
 
-function optionalBoolean(name: string, fallback: boolean) {
-  const value = optionalEnv(name);
-
-  if (value === undefined) {
-    return fallback;
-  }
-
-  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
-}
-
 function csvEnv(name: string, fallback: string[]) {
   const value = optionalEnv(name);
 
@@ -95,7 +85,6 @@ function writablePath(value: string) {
 
 export function getComfySettings() {
   const workflowPath = optionalEnv("WORKFLOW_PATH") || "workflows/workflow_api.json";
-  const outputDir = optionalEnv("OUTPUT_DIR") || "tmp/outputs";
   const jobsDir = optionalEnv("JOBS_DIR") || "tmp/jobs";
   const comfyUrl = requiredEnv("COMFY_URL");
 
@@ -115,22 +104,16 @@ export function getComfySettings() {
     ]),
     imageStrengthNodeId: optionalEnv("IMAGE_STRENGTH_NODE_ID"),
     outputNodeId: optionalEnv("COMFY_OUTPUT_NODE_ID"),
-    outputDir: writablePath(outputDir),
     jobsDir: writablePath(jobsDir),
-    uploadToDrive: optionalBoolean("UPLOAD_TO_DRIVE", true),
-    googleDriveFolderId: optionalEnv("GOOGLE_DRIVE_FOLDER_ID"),
-    googleDrivePublic: optionalBoolean("GOOGLE_DRIVE_PUBLIC", true),
     pollIntervalSeconds: optionalNumber("POLL_INTERVAL_SECONDS") || 5,
     jobTimeoutSeconds: optionalNumber("JOB_TIMEOUT_SECONDS") || 7200,
   };
 }
 
 export function getComfyStorageSettings() {
-  const outputDir = optionalEnv("OUTPUT_DIR") || "tmp/outputs";
   const jobsDir = optionalEnv("JOBS_DIR") || "tmp/jobs";
 
   return {
-    outputDir: writablePath(outputDir),
     jobsDir: writablePath(jobsDir),
   };
 }

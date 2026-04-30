@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { validatePublisherAuth } from "@/lib/api-auth";
 import { createComfyJob } from "@/lib/comfy/jobs";
 import {
   createImagePaths,
   downloadImage,
   queueComfyVideoJob,
+  waitForQueuedComfyVideoJob,
   type ComfyGenerationOptions,
 } from "@/lib/comfy/processor";
 
@@ -12,6 +13,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type UrlGenerationRequest = ComfyGenerationOptions & {
+  title?: unknown;
+  video_title?: unknown;
   prompt?: unknown;
   global_prompt?: unknown;
   prompt_1?: unknown;
@@ -110,6 +113,35 @@ function getSegmentPrompts(body: UrlGenerationRequest) {
     .filter((value): value is string => Boolean(value));
 }
 
+function buildStatusUrl({
+  jobId,
+  promptId,
+  clientId,
+  title,
+}: {
+  jobId: string;
+  promptId: string | undefined;
+  clientId: string | undefined;
+  title: string | undefined;
+}) {
+  const params = new URLSearchParams();
+
+  if (promptId) {
+    params.set("prompt_id", promptId);
+  }
+
+  if (clientId) {
+    params.set("client_id", clientId);
+  }
+
+  if (title) {
+    params.set("title", title);
+  }
+
+  const query = params.toString();
+  return `/api/comfy/jobs/${jobId}${query ? `?${query}` : ""}`;
+}
+
 export async function POST(req: NextRequest) {
   if (!validatePublisherAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -163,25 +195,49 @@ export async function POST(req: NextRequest) {
       segment_lengths: optionalNumberArray(request, "segment_lengths"),
       image_strength: optionalNumber(request, "image_strength"),
     };
+    const title = getString(request, ["title", "video_title"]) || undefined;
     const jobId = crypto.randomUUID();
     const paths = await createImagePaths(jobId);
 
-    await createComfyJob(jobId);
+    await createComfyJob(jobId, {
+      title,
+    });
     await Promise.all(
       imageUrls.map((imageUrl, index) => downloadImage(imageUrl, paths[index]))
     );
 
     const job = await queueComfyVideoJob({
       jobId,
+      title,
       globalPrompt,
       segmentPrompts,
       imagePaths: paths,
       options,
     });
 
+    if (job.prompt_id) {
+      if (!process.env.VERCEL) {
+        after(async () => {
+          await waitForQueuedComfyVideoJob({
+            jobId,
+            promptId: job.prompt_id!,
+            clientId: job.comfy_client_id,
+          });
+        });
+      }
+    }
+
     return NextResponse.json({
       job_id: jobId,
+      title: title || null,
+      status_url: buildStatusUrl({
+        jobId,
+        promptId: job.prompt_id,
+        clientId: job.comfy_client_id,
+        title,
+      }),
       prompt_id: job.prompt_id,
+      comfy_client_id: job.comfy_client_id,
       status: job.status,
     });
   } catch (error) {

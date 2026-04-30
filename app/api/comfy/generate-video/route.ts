@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (job.prompt_id) {
-      after(async () => {
+      if (process.env.VERCEL) {
         const scheduled = await scheduleComfyCompletionCheck({
           job_id: jobId,
           prompt_id: job.prompt_id!,
@@ -213,23 +213,39 @@ export async function POST(req: NextRequest) {
           attempt: 1,
         });
 
-        if (!scheduled && process.env.VERCEL) {
+        if (!scheduled) {
           await updateComfyJob(jobId, {
             status: "failed",
             error:
               "QStash scheduler is not configured. Set QSTASH_TOKEN, COMFY_WORKER_SECRET, and APP_BASE_URL on Vercel for long Comfy jobs.",
           });
-          return;
+          return NextResponse.json(
+            {
+              error:
+                "QStash scheduler is not configured. Set QSTASH_TOKEN, COMFY_WORKER_SECRET, and APP_BASE_URL on Vercel so completed Comfy videos are always uploaded to Google Drive.",
+            },
+            { status: 500 }
+          );
         }
-
-        if (!scheduled) {
-          await waitForQueuedComfyVideoJob({
-            jobId,
-            promptId: job.prompt_id!,
-            clientId: job.comfy_client_id,
+      } else {
+        after(async () => {
+          const scheduled = await scheduleComfyCompletionCheck({
+            job_id: jobId,
+            prompt_id: job.prompt_id!,
+            comfy_client_id: job.comfy_client_id,
+            title,
+            attempt: 1,
           });
-        }
-      });
+
+          if (!scheduled) {
+            await waitForQueuedComfyVideoJob({
+              jobId,
+              promptId: job.prompt_id!,
+              clientId: job.comfy_client_id,
+            });
+          }
+        });
+      }
     }
 
     return NextResponse.json({

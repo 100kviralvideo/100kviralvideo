@@ -72,13 +72,8 @@ export async function GET() {
     google_drive_configured: isGoogleDriveConfigured(),
     comfy_url_configured: Boolean(process.env.COMFY_URL?.trim()),
     comfy_workflow_path: process.env.WORKFLOW_PATH?.trim() || "workflows/workflow_api.json",
-    comfy_upload_to_drive: process.env.UPLOAD_TO_DRIVE?.trim() || "true",
-    comfy_google_drive_folder_id_configured: Boolean(
-      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim()
-    ),
-    comfy_job_store_drive_configured: Boolean(
-      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
-        isGoogleDriveConfigured()
+    comfy_output_node_id_configured: Boolean(
+      process.env.COMFY_OUTPUT_NODE_ID?.trim()
     ),
   });
 }

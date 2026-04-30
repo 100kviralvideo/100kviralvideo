@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { validatePublisherAuth } from "@/lib/api-auth";
 import { createComfyJob } from "@/lib/comfy/jobs";
 import {
   createImagePaths,
   queueComfyVideoJob,
   saveUploadedImage,
+  waitForQueuedComfyVideoJob,
   type ComfyGenerationOptions,
 } from "@/lib/comfy/processor";
 
@@ -75,6 +76,10 @@ function getPrompt(form: FormData, names: string[]) {
   return null;
 }
 
+function getOptionalText(form: FormData, names: string[]) {
+  return getPrompt(form, names) || undefined;
+}
+
 function getSegmentPrompts(form: FormData) {
   const rawSegmentPrompts = form.get("segment_prompts");
 
@@ -105,6 +110,35 @@ function getImageFiles(form: FormData) {
     getRequiredFile(form, "segment_3_image"),
     getRequiredFile(form, "segment_4_image"),
   ];
+}
+
+function buildStatusUrl({
+  jobId,
+  promptId,
+  clientId,
+  title,
+}: {
+  jobId: string;
+  promptId: string | undefined;
+  clientId: string | undefined;
+  title: string | undefined;
+}) {
+  const params = new URLSearchParams();
+
+  if (promptId) {
+    params.set("prompt_id", promptId);
+  }
+
+  if (clientId) {
+    params.set("client_id", clientId);
+  }
+
+  if (title) {
+    params.set("title", title);
+  }
+
+  const query = params.toString();
+  return `/api/comfy/jobs/${jobId}${query ? `?${query}` : ""}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -147,10 +181,13 @@ export async function POST(req: NextRequest) {
       segment_lengths: parseSegmentLengths(form),
       image_strength: parseOptionalNumber(form, "image_strength"),
     };
+    const title = getOptionalText(form, ["title", "video_title"]);
     const jobId = crypto.randomUUID();
     const paths = await createImagePaths(jobId);
 
-    await createComfyJob(jobId);
+    await createComfyJob(jobId, {
+      title,
+    });
     await Promise.all(
       imageFiles.map((imageFile, index) =>
         saveUploadedImage(imageFile, paths[index])
@@ -159,15 +196,36 @@ export async function POST(req: NextRequest) {
 
     const job = await queueComfyVideoJob({
       jobId,
+      title,
       globalPrompt,
       segmentPrompts,
       imagePaths: paths,
       options,
     });
 
+    if (job.prompt_id) {
+      if (!process.env.VERCEL) {
+        after(async () => {
+          await waitForQueuedComfyVideoJob({
+            jobId,
+            promptId: job.prompt_id!,
+            clientId: job.comfy_client_id,
+          });
+        });
+      }
+    }
+
     return NextResponse.json({
       job_id: jobId,
+      title: title || null,
+      status_url: buildStatusUrl({
+        jobId,
+        promptId: job.prompt_id,
+        clientId: job.comfy_client_id,
+        title,
+      }),
       prompt_id: job.prompt_id,
+      comfy_client_id: job.comfy_client_id,
       status: job.status,
     });
   } catch (error) {

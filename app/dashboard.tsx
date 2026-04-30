@@ -1,47 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { PublishHistoryItem } from "@/lib/publish-history";
+import type { PrePublishQueueItem } from "@/lib/prepublish-queue";
 
-type ConfigStatus = {
-  publisher_api_key_configured: boolean;
-  youtube_client_id_configured: boolean;
-  youtube_client_secret_configured: boolean;
-  youtube_redirect_uri_configured: boolean;
-  youtube_refresh_token_configured: boolean;
+type PendingResponse = {
+  configured: boolean;
+  items: PrePublishQueueItem[];
+  error?: string;
 };
 
 type PlatformName = "youtube_shorts" | "instagram_reels" | "tiktok";
 
-const platforms: Array<{ id: PlatformName; label: string; accent: string }> = [
-  { id: "youtube_shorts", label: "YouTube Shorts", accent: "bg-red-600" },
-  {
-    id: "instagram_reels",
-    label: "Instagram Reels",
-    accent: "bg-fuchsia-600",
-  },
-  { id: "tiktok", label: "TikTok", accent: "bg-zinc-950" },
-];
-
-const statusStyles: Record<string, string> = {
-  uploaded: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  processed: "bg-sky-50 text-sky-700 ring-sky-200",
-  needs_manual_action: "bg-amber-50 text-amber-800 ring-amber-200",
-  not_implemented_yet: "bg-zinc-100 text-zinc-600 ring-zinc-200",
-  failed: "bg-rose-50 text-rose-700 ring-rose-200",
+const platformLabels: Record<PlatformName, string> = {
+  youtube_shorts: "YouTube Shorts",
+  instagram_reels: "Instagram Reels",
+  tiktok: "TikTok",
 };
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded px-2 py-1 text-xs font-medium ring-1 ring-inset ${
-        statusStyles[status] ?? "bg-zinc-100 text-zinc-700 ring-zinc-200"
-      }`}
-    >
-      {status.replaceAll("_", " ")}
-    </span>
-  );
-}
 
 function PlatformMark({ platform }: { platform: string }) {
   if (platform === "youtube_shorts") {
@@ -67,9 +41,9 @@ function PlatformMark({ platform }: { platform: string }) {
     return (
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-zinc-950 text-lg font-black text-white shadow-sm">
         <span className="relative">
-          <span className="absolute -left-0.5 top-0 text-cyan-300">♪</span>
-          <span className="absolute left-0.5 top-0 text-rose-400">♪</span>
-          <span className="relative">♪</span>
+          <span className="absolute -left-0.5 top-0 text-cyan-300">T</span>
+          <span className="absolute left-0.5 top-0 text-rose-400">T</span>
+          <span className="relative">T</span>
         </span>
       </span>
     );
@@ -91,61 +65,185 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function countPlatformJobs(history: PublishHistoryItem[], platform: PlatformName) {
-  return history.reduce((count, job) => {
-    return count + job.results.filter((result) => result.platform === platform).length;
-  }, 0);
+function formatHashtag(hashtag: string) {
+  const trimmed = hashtag.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
 }
 
-function countPlatformFailures(
-  history: PublishHistoryItem[],
-  platform: PlatformName
-) {
-  return history.reduce((count, job) => {
-    return (
-      count +
-      job.results.filter(
-        (result) => result.platform === platform && result.status === "failed"
-      ).length
-    );
-  }, 0);
+function PendingClipCard({
+  item,
+  approving,
+  onApprove,
+}: {
+  item: PrePublishQueueItem;
+  approving: boolean;
+  onApprove: (jobId: string) => void;
+}) {
+  const hashtags = useMemo(
+    () => item.hashtags.map(formatHashtag).filter(Boolean),
+    [item.hashtags]
+  );
+
+  return (
+    <article className="grid gap-5 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(280px,420px)_1fr]">
+      <div className="overflow-hidden rounded bg-zinc-950">
+        <video
+          className="aspect-[9/16] max-h-[620px] w-full bg-zinc-950 object-contain"
+          controls
+          preload="metadata"
+          src={item.final_video_url}
+        />
+      </div>
+
+      <div className="flex min-w-0 flex-col">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">
+              {item.job_id}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-zinc-950">
+              {item.title}
+            </h2>
+          </div>
+          <span className="rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+            waiting approval
+          </span>
+        </div>
+
+        <dl className="mt-5 grid gap-4 text-sm">
+          <div>
+            <dt className="font-medium text-zinc-950">Caption</dt>
+            <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+              {item.caption}
+            </dd>
+          </div>
+
+          {item.description ? (
+            <div>
+              <dt className="font-medium text-zinc-950">Description</dt>
+              <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+                {item.description}
+              </dd>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="font-medium text-zinc-950">Duration</dt>
+              <dd className="mt-1 text-zinc-700">
+                {item.duration_sec ? `${item.duration_sec}s` : "Unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-zinc-950">Found</dt>
+              <dd className="mt-1 text-zinc-700">
+                {formatDate(item.created_at)}
+              </dd>
+            </div>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Hashtags</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {hashtags.length ? (
+                hashtags.map((hashtag) => (
+                  <span
+                    className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700"
+                    key={hashtag}
+                  >
+                    {hashtag}
+                  </span>
+                ))
+              ) : (
+                <span className="text-zinc-500">No hashtags</span>
+              )}
+            </dd>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Platforms</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {item.platforms.map((target) => (
+                <span
+                  className="inline-flex items-center gap-2 rounded border border-zinc-200 bg-white px-2 py-1 text-sm font-medium text-zinc-800"
+                  key={`${item.job_id}-${target.platform}`}
+                >
+                  <PlatformMark platform={target.platform} />
+                  {platformLabels[target.platform] ?? target.platform}
+                </span>
+              ))}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-4">
+          <button
+            className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+            disabled={approving}
+            onClick={() => onApprove(item.job_id)}
+            type="button"
+          >
+            {approving ? "Publishing..." : "Approve and publish"}
+          </button>
+          <a
+            className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            href={item.final_video_url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open video URL
+          </a>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 export function Dashboard() {
-  const [history, setHistory] = useState<PublishHistoryItem[]>([]);
-  const [historySource, setHistorySource] = useState("memory");
-  const [config, setConfig] = useState<ConfigStatus | null>(null);
+  const [items, setItems] = useState<PrePublishQueueItem[]>([]);
+  const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [approvingJobId, setApprovingJobId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function loadPending() {
+    try {
+      const response = await fetch("/api/pre-publish/pending", {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as PendingResponse;
+
+      setConfigured(data.configured);
+      setItems(data.items ?? []);
+      setError(data.error ?? null);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to load queue"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
 
-    async function loadDashboard() {
-      try {
-        const [historyResponse, configResponse] = await Promise.all([
-          fetch("/api/history", { cache: "no-store" }),
-          fetch("/api/config-check", { cache: "no-store" }),
-        ]);
-        const historyData = (await historyResponse.json()) as {
-          source?: string;
-          history?: PublishHistoryItem[];
-        };
-        const configData = (await configResponse.json()) as ConfigStatus;
-
-        if (active) {
-          setHistory(historyData.history ?? []);
-          setHistorySource(historyData.source ?? "memory");
-          setConfig(configData);
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
+    async function refresh() {
+      if (!active) {
+        return;
       }
+
+      await loadPending();
     }
 
-    loadDashboard();
-    const interval = window.setInterval(loadDashboard, 10000);
+    refresh();
+    const interval = window.setInterval(refresh, 10000);
 
     return () => {
       active = false;
@@ -153,25 +251,37 @@ export function Dashboard() {
     };
   }, []);
 
-  const totalResults = useMemo(
-    () => history.reduce((count, job) => count + job.results.length, 0),
-    [history]
-  );
-  const failedResults = useMemo(
-    () =>
-      history.reduce(
-        (count, job) =>
-          count + job.results.filter((result) => result.status === "failed").length,
-        0
-      ),
-    [history]
-  );
-  const youtubeReady = Boolean(
-    config?.youtube_client_id_configured &&
-      config.youtube_client_secret_configured &&
-      config.youtube_redirect_uri_configured &&
-      config.youtube_refresh_token_configured
-  );
+  async function approve(jobId: string) {
+    setApprovingJobId(jobId);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/pre-publish/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ job_id: jobId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Publish failed");
+      }
+
+      setMessage(`Published ${jobId}`);
+      await loadPending();
+    } catch (approveError) {
+      setError(
+        approveError instanceof Error
+          ? approveError.message
+          : "Publish failed"
+      );
+    } finally {
+      setApprovingJobId(null);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#f6f7f9] text-zinc-950">
@@ -180,180 +290,75 @@ export function Dashboard() {
           <div>
             <p className="text-sm font-medium text-zinc-500">Publisher API</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-normal text-zinc-950 sm:text-3xl">
-              Clip Publishing Dashboard
+              Clips Waiting For Approval
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <a
               className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-              href="/terms"
-            >
-              Terms
-            </a>
-            <a
-              className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-              href="/privacy"
-            >
-              Privacy
-            </a>
-            <a
-              className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
               href="/docs"
             >
-              Open Swagger
+              Swagger
             </a>
             <a
               className="rounded border border-zinc-900 bg-zinc-950 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
               href="/api/config-check"
             >
-              Config Check
+              Config
             </a>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
-        <section className="grid gap-4 md:grid-cols-4">
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">Recent jobs</p>
-            <p className="mt-2 text-3xl font-semibold">{history.length}</p>
+        {message ? (
+          <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+            {message}
           </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">Platform actions</p>
-            <p className="mt-2 text-3xl font-semibold">{totalResults}</p>
+        ) : null}
+
+        {error ? (
+          <div className="mb-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
+            {error}
           </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">Failed actions</p>
-            <p className="mt-2 text-3xl font-semibold">{failedResults}</p>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">YouTube OAuth</p>
-            <p className="mt-3">
-              <StatusBadge status={youtubeReady ? "processed" : "failed"} />
+        ) : null}
+
+        {!configured ? (
+          <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
+            <h2 className="text-lg font-semibold text-zinc-950">
+              Pre-publish queue is not configured
+            </h2>
+            <p className="mt-2 text-sm text-zinc-500">
+              Add the Google Sheets environment variables and use a
+              PrePublishQueue tab in the same spreadsheet.
             </p>
-          </div>
-        </section>
-
-        <section className="mt-6 grid gap-4 lg:grid-cols-3">
-          {platforms.map((platform) => {
-            const total = countPlatformJobs(history, platform.id);
-            const failures = countPlatformFailures(history, platform.id);
-
-            return (
-              <div
-                className="rounded-lg border border-zinc-200 bg-white p-4"
-                key={platform.id}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <PlatformMark platform={platform.id} />
-                    <div>
-                      <h2 className="text-base font-semibold">
-                        {platform.label}
-                      </h2>
-                      <div className={`mt-1 h-1 w-10 rounded ${platform.accent}`} />
-                    </div>
-                  </div>
-                  <StatusBadge
-                    status={failures > 0 ? "failed" : total > 0 ? "processed" : "not_implemented_yet"}
-                  />
-                </div>
-                <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <dt className="text-zinc-500">Actions</dt>
-                    <dd className="mt-1 text-xl font-semibold">{total}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-zinc-500">Failures</dt>
-                    <dd className="mt-1 text-xl font-semibold">{failures}</dd>
-                  </div>
-                </dl>
-              </div>
-            );
-          })}
-        </section>
-
-        <section className="mt-6 rounded-lg border border-zinc-200 bg-white">
-          <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
-            <h2 className="text-base font-semibold">Clip History</h2>
-            <span className="text-sm text-zinc-500">
-              {loading
-                ? "Loading"
-                : `Source: ${historySource.replaceAll("_", " ")}. Refreshes every 10 seconds`}
-            </span>
-          </div>
-
-          {history.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <p className="text-base font-medium text-zinc-900">
-                No publish jobs recorded yet.
-              </p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Send a request to /api/publish and the latest results will appear here.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-zinc-200 text-sm">
-                <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-normal text-zinc-500">
-                  <tr>
-                    <th className="px-4 py-3">Clip</th>
-                    <th className="px-4 py-3">Created</th>
-                    <th className="px-4 py-3">Duration</th>
-                    <th className="px-4 py-3">Platforms</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {history.map((job) => (
-                    <tr key={`${job.job_id}-${job.created_at}`}>
-                      <td className="max-w-sm px-4 py-4 align-top">
-                        <p className="font-medium text-zinc-950">{job.title}</p>
-                        <p className="mt-1 text-xs text-zinc-500">{job.job_id}</p>
-                      </td>
-                      <td className="px-4 py-4 align-top text-zinc-600">
-                        {formatDate(job.created_at)}
-                      </td>
-                      <td className="px-4 py-4 align-top text-zinc-600">
-                        {job.duration_sec ? `${job.duration_sec}s` : "Unknown"}
-                      </td>
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex flex-col gap-2">
-                          {job.results.map((result, index) => (
-                            <div
-                              className="flex flex-wrap items-center gap-2"
-                              key={`${result.platform}-${index}`}
-                            >
-                              <PlatformMark platform={result.platform} />
-                              <span className="min-w-32 font-medium capitalize text-zinc-800">
-                                {result.platform.replaceAll("_", " ")}
-                              </span>
-                              <StatusBadge status={result.status} />
-                              {result.youtube_url ? (
-                                <a
-                                  className="text-xs font-medium text-sky-700 hover:text-sky-900"
-                                  href={result.youtube_url}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  View video
-                                </a>
-                              ) : null}
-                              {result.error ? (
-                                <span className="text-xs text-rose-700">
-                                  {result.error}
-                                </span>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+          </section>
+        ) : loading ? (
+          <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center text-sm font-medium text-zinc-500">
+            Loading clips...
+          </section>
+        ) : items.length === 0 ? (
+          <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
+            <h2 className="text-lg font-semibold text-zinc-950">
+              No clips are waiting for approval
+            </h2>
+            <p className="mt-2 text-sm text-zinc-500">
+              New items will appear here after /api/pre-publish finds the final
+              Drive video.
+            </p>
+          </section>
+        ) : (
+          <section className="grid gap-5">
+            {items.map((item) => (
+              <PendingClipCard
+                approving={approvingJobId === item.job_id}
+                item={item}
+                key={`${item.job_id}-${item.created_at}`}
+                onApprove={approve}
+              />
+            ))}
+          </section>
+        )}
       </div>
     </main>
   );

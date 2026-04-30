@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
+import { validatePublisherAuth } from "@/lib/api-auth";
+import {
+  createGoogleDriveClient,
+  escapeDriveQueryValue,
+  makeDriveFilePublic,
+} from "@/lib/google-drive";
 
 export const runtime = "nodejs";
 
@@ -10,25 +15,6 @@ type FindVideoBody = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-
-  return value;
-}
-
-function validateAuth(req: NextRequest) {
-  const authHeader = req.headers.get("authorization")?.trim();
-  const publisherApiKey = process.env.PUBLISHER_API_KEY?.trim();
-
-  return Boolean(
-    publisherApiKey && authHeader === `Bearer ${publisherApiKey}`
-  );
 }
 
 async function parseBody(req: NextRequest) {
@@ -76,25 +62,6 @@ async function parseBody(req: NextRequest) {
   };
 }
 
-function createDriveClient() {
-  const clientEmail = getRequiredEnv("GOOGLE_DRIVE_CLIENT_EMAIL");
-  const privateKey = getRequiredEnv("GOOGLE_DRIVE_PRIVATE_KEY").replace(
-    /\\n/g,
-    "\n"
-  );
-  const auth = new google.auth.JWT({
-    email: clientEmail,
-    key: privateKey,
-    scopes: ["https://www.googleapis.com/auth/drive"],
-  });
-
-  return google.drive({ version: "v3", auth });
-}
-
-function escapeDriveQueryValue(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 function buildDriveQuery({ folder_id, video_filename }: FindVideoBody) {
   const folderId = escapeDriveQueryValue(folder_id);
   const filename = escapeDriveQueryValue(video_filename);
@@ -107,7 +74,7 @@ function buildDriveQuery({ folder_id, video_filename }: FindVideoBody) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!validateAuth(req)) {
+  if (!validatePublisherAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -118,7 +85,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const drive = createDriveClient();
+    const drive = createGoogleDriveClient();
     const filesResponse = await drive.files.list({
       q: buildDriveQuery(body),
       orderBy: "createdTime desc",
@@ -145,23 +112,7 @@ export async function POST(req: NextRequest) {
       throw new Error("Google Drive returned a file without an id");
     }
 
-    try {
-      await drive.permissions.create({
-        fileId: selectedFile.id,
-        requestBody: {
-          type: "anyone",
-          role: "reader",
-        },
-        supportsAllDrives: true,
-      });
-    } catch (permissionError) {
-      const message =
-        permissionError instanceof Error ? permissionError.message : "";
-
-      if (!message.toLowerCase().includes("permission already exists")) {
-        throw permissionError;
-      }
-    }
+    await makeDriveFilePublic(selectedFile.id);
 
     const refreshedFileResponse = await drive.files.get({
       fileId: selectedFile.id,

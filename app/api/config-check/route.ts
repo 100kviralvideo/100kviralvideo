@@ -43,5 +43,11 @@ export async function GET() {
     ),
     google_sheets_history_sheet:
       process.env.GOOGLE_SHEETS_HISTORY_SHEET?.trim() || "History",
+    google_drive_client_email_configured: Boolean(
+      process.env.GOOGLE_DRIVE_CLIENT_EMAIL?.trim()
+    ),
+    google_drive_private_key_configured: Boolean(
+      process.env.GOOGLE_DRIVE_PRIVATE_KEY?.trim()
+    ),
   });
 }

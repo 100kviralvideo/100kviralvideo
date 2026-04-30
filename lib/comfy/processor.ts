@@ -135,6 +135,7 @@ export async function processComfyVideoJob({
   await waitForQueuedComfyVideoJob({
     jobId,
     promptId: queuedJob.prompt_id,
+    clientId: queuedJob.comfy_client_id,
   });
 }
 
@@ -178,8 +179,12 @@ export async function queueComfyVideoJob({
     });
 
     await updateComfyJob(jobId, { status: "queued_in_comfy" });
-    const promptId = await comfy.queuePrompt(workflow);
-    return updateComfyJob(jobId, { status: "processing", prompt_id: promptId });
+    const queuedPrompt = await comfy.queuePrompt(workflow);
+    return updateComfyJob(jobId, {
+      status: "processing",
+      prompt_id: queuedPrompt.promptId,
+      comfy_client_id: queuedPrompt.clientId,
+    });
   } catch (error) {
     await updateComfyJob(jobId, {
       status: "failed",
@@ -192,9 +197,11 @@ export async function queueComfyVideoJob({
 export async function waitForQueuedComfyVideoJob({
   jobId,
   promptId,
+  clientId,
 }: {
   jobId: string;
   promptId: string;
+  clientId?: string;
 }) {
   const settings = getComfySettings();
 
@@ -202,6 +209,7 @@ export async function waitForQueuedComfyVideoJob({
     const comfy = new ComfyClient(settings.comfyUrl);
     const historyItem = await comfy.waitForCompletion({
       promptId,
+      clientId,
       pollIntervalSeconds: settings.pollIntervalSeconds,
       timeoutSeconds: settings.jobTimeoutSeconds,
     });

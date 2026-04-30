@@ -112,11 +112,25 @@ function getImageFiles(form: FormData) {
   ];
 }
 
-function buildStatusUrl(jobId: string, promptId: string | undefined, title: string | undefined) {
+function buildStatusUrl({
+  jobId,
+  promptId,
+  clientId,
+  title,
+}: {
+  jobId: string;
+  promptId: string | undefined;
+  clientId: string | undefined;
+  title: string | undefined;
+}) {
   const params = new URLSearchParams();
 
   if (promptId) {
     params.set("prompt_id", promptId);
+  }
+
+  if (clientId) {
+    params.set("client_id", clientId);
   }
 
   if (title) {
@@ -193,6 +207,7 @@ export async function POST(req: NextRequest) {
         waitForQueuedComfyVideoJob({
           jobId,
           promptId: job.prompt_id!,
+          clientId: job.comfy_client_id,
         })
       );
     }
@@ -200,8 +215,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       job_id: jobId,
       title: title || null,
-      status_url: buildStatusUrl(jobId, job.prompt_id, title),
+      status_url: buildStatusUrl({
+        jobId,
+        promptId: job.prompt_id,
+        clientId: job.comfy_client_id,
+        title,
+      }),
       prompt_id: job.prompt_id,
+      comfy_client_id: job.comfy_client_id,
       status: job.status,
     });
   } catch (error) {

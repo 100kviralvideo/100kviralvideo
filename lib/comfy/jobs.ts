@@ -25,6 +25,7 @@ export type ComfyJobRecord = {
   status: ComfyJobStatus;
   title?: string;
   prompt_id?: string;
+  comfy_client_id?: string;
   drive_link?: string;
   final_video_url?: string;
   local_output_path?: string;

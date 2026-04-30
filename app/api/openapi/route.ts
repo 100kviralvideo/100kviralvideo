@@ -605,9 +605,11 @@ export async function GET() {
             title: { type: ["string", "null"] },
             status_url: {
               type: "string",
-              example: "/api/comfy/jobs/JOB_ID?prompt_id=PROMPT_ID&title=Video+Title",
+              example:
+                "/api/comfy/jobs/JOB_ID?prompt_id=PROMPT_ID&client_id=CLIENT_ID&title=Video+Title",
             },
             prompt_id: { type: "string" },
+            comfy_client_id: { type: "string" },
             status: { type: "string", example: "processing" },
           },
         },
@@ -633,6 +635,7 @@ export async function GET() {
               ],
             },
             prompt_id: { type: "string" },
+            comfy_client_id: { type: "string" },
             drive_link: { type: "string", format: "uri" },
             final_video_url: { type: "string", format: "uri" },
             local_output_path: { type: "string" },

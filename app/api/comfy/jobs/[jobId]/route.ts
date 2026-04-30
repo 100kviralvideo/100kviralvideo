@@ -25,10 +25,12 @@ export async function GET(
     }
 
     const title = req.nextUrl.searchParams.get("title")?.trim() || undefined;
+    const clientId = req.nextUrl.searchParams.get("client_id")?.trim() || undefined;
     await createComfyJob(jobId, { title });
     job = await updateComfyJob(jobId, {
       status: "processing",
       prompt_id: promptId,
+      comfy_client_id: clientId,
     });
   }
 

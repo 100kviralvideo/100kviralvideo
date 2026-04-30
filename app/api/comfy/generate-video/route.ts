@@ -3,7 +3,7 @@ import { validatePublisherAuth } from "@/lib/api-auth";
 import { createComfyJob } from "@/lib/comfy/jobs";
 import {
   createImagePaths,
-  processComfyVideoJob,
+  queueComfyVideoJob,
   saveUploadedImage,
   type ComfyGenerationOptions,
 } from "@/lib/comfy/processor";
@@ -150,14 +150,14 @@ export async function POST(req: NextRequest) {
     const jobId = crypto.randomUUID();
     const paths = await createImagePaths(jobId);
 
-    createComfyJob(jobId);
+    await createComfyJob(jobId);
     await Promise.all(
       imageFiles.map((imageFile, index) =>
         saveUploadedImage(imageFile, paths[index])
       )
     );
 
-    void processComfyVideoJob({
+    const job = await queueComfyVideoJob({
       jobId,
       globalPrompt,
       segmentPrompts,
@@ -165,7 +165,11 @@ export async function POST(req: NextRequest) {
       options,
     });
 
-    return NextResponse.json({ job_id: jobId, status: "queued" });
+    return NextResponse.json({
+      job_id: jobId,
+      prompt_id: job.prompt_id,
+      status: job.status,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Invalid request body" },

@@ -13,17 +13,44 @@ export function getRequiredEnv(name: string) {
   return value;
 }
 
-export function createGoogleDriveClient() {
-  const clientEmail = getRequiredEnv("GOOGLE_DRIVE_CLIENT_EMAIL");
-  const privateKey = getRequiredEnv("GOOGLE_DRIVE_PRIVATE_KEY").replace(
-    /\\n/g,
-    "\n"
+export function createGoogleDriveOAuthClient() {
+  const clientId = getRequiredEnv("GOOGLE_DRIVE_CLIENT_ID");
+  const clientSecret = getRequiredEnv("GOOGLE_DRIVE_CLIENT_SECRET");
+  const redirectUri = getRequiredEnv("GOOGLE_DRIVE_REDIRECT_URI");
+
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
+
+export function isGoogleDriveOAuthConfigured() {
+  return Boolean(
+    process.env.GOOGLE_DRIVE_CLIENT_ID?.trim() &&
+      process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim() &&
+      process.env.GOOGLE_DRIVE_REDIRECT_URI?.trim() &&
+      process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim()
   );
-  const auth = new google.auth.JWT({
-    email: clientEmail,
-    key: privateKey,
-    scopes: ["https://www.googleapis.com/auth/drive"],
+}
+
+export function getGoogleDriveAuthUrl() {
+  const oauth2Client = createGoogleDriveOAuthClient();
+
+  return oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: ["https://www.googleapis.com/auth/drive"],
   });
+}
+
+export async function getGoogleDriveTokens(code: string) {
+  const oauth2Client = createGoogleDriveOAuthClient();
+  const { tokens } = await oauth2Client.getToken(code);
+
+  return tokens;
+}
+
+export function createGoogleDriveClient() {
+  const refreshToken = getRequiredEnv("GOOGLE_DRIVE_REFRESH_TOKEN");
+  const auth = createGoogleDriveOAuthClient();
+  auth.setCredentials({ refresh_token: refreshToken });
 
   return google.drive({ version: "v3", auth });
 }

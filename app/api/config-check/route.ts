@@ -43,17 +43,30 @@ export async function GET() {
     ),
     google_sheets_history_sheet:
       process.env.GOOGLE_SHEETS_HISTORY_SHEET?.trim() || "History",
-    google_drive_client_email_configured: Boolean(
-      process.env.GOOGLE_DRIVE_CLIENT_EMAIL?.trim()
+    google_drive_client_id_configured: Boolean(
+      process.env.GOOGLE_DRIVE_CLIENT_ID?.trim()
     ),
-    google_drive_private_key_configured: Boolean(
-      process.env.GOOGLE_DRIVE_PRIVATE_KEY?.trim()
+    google_drive_client_secret_configured: Boolean(
+      process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim()
+    ),
+    google_drive_redirect_uri_configured: Boolean(
+      process.env.GOOGLE_DRIVE_REDIRECT_URI?.trim()
+    ),
+    google_drive_refresh_token_configured: Boolean(
+      process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim()
     ),
     comfy_url_configured: Boolean(process.env.COMFY_URL?.trim()),
     comfy_workflow_path: process.env.WORKFLOW_PATH?.trim() || "workflows/workflow_api.json",
     comfy_upload_to_drive: process.env.UPLOAD_TO_DRIVE?.trim() || "true",
     comfy_google_drive_folder_id_configured: Boolean(
       process.env.GOOGLE_DRIVE_FOLDER_ID?.trim()
+    ),
+    comfy_job_store_drive_configured: Boolean(
+      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
+        process.env.GOOGLE_DRIVE_CLIENT_ID?.trim() &&
+        process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim() &&
+        process.env.GOOGLE_DRIVE_REDIRECT_URI?.trim() &&
+        process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim()
     ),
   });
 }

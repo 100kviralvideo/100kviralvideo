@@ -197,7 +197,7 @@ export async function GET() {
           },
           responses: {
             "200": {
-              description: "ComfyUI job queued",
+              description: "ComfyUI job queued in ComfyUI",
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/ComfyQueuedResponse" },
@@ -228,7 +228,7 @@ export async function GET() {
           summary: "Generate a video from image URLs with ComfyUI",
           operationId: "generateComfyVideoFromUrls",
           description:
-            "Downloads three image URLs, queues the ComfyUI workflow, and returns a job id for polling.",
+            "Downloads four image URLs, queues the ComfyUI workflow, and returns a job id for polling.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -240,7 +240,7 @@ export async function GET() {
           },
           responses: {
             "200": {
-              description: "ComfyUI job queued",
+              description: "ComfyUI job queued in ComfyUI",
               content: {
                 "application/json": {
                   schema: { $ref: "#/components/schemas/ComfyQueuedResponse" },
@@ -587,10 +587,11 @@ export async function GET() {
         },
         ComfyQueuedResponse: {
           type: "object",
-          required: ["job_id", "status"],
+          required: ["job_id", "prompt_id", "status"],
           properties: {
             job_id: { type: "string" },
-            status: { type: "string", example: "queued" },
+            prompt_id: { type: "string" },
+            status: { type: "string", example: "processing" },
           },
         },
         ComfyJob: {

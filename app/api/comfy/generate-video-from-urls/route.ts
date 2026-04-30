@@ -208,6 +208,7 @@ export async function POST(req: NextRequest) {
 
     const job = await queueComfyVideoJob({
       jobId,
+      title,
       globalPrompt,
       segmentPrompts,
       imagePaths: paths,

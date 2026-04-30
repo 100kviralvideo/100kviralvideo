@@ -127,6 +127,33 @@ function setOptionalValue(
   }
 }
 
+function sanitizeComfyFilenamePrefix(value: string) {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function setOutputFilenamePrefix(
+  workflow: ComfyWorkflow,
+  nodeId: string | undefined,
+  title: string | undefined
+) {
+  if (!nodeId || !title) {
+    return;
+  }
+
+  const filenamePrefix = sanitizeComfyFilenamePrefix(title);
+
+  if (!filenamePrefix) {
+    return;
+  }
+
+  const node = getNode(workflow, nodeId);
+  node.inputs!.filename_prefix = filenamePrefix;
+}
+
 export async function loadWorkflowApi(path: string) {
   const workflow = JSON.parse(await readFile(path, "utf-8")) as unknown;
 
@@ -159,11 +186,13 @@ export function buildWorkflow({
   heightNodeId,
   fpsNodeId,
   imageStrengthNodeId,
+  outputNodeId,
   width,
   height,
   fps,
   segmentLengths,
   imageStrength,
+  outputTitle,
 }: {
   baseWorkflow: ComfyWorkflow;
   imageNodeIds: string[];
@@ -176,11 +205,13 @@ export function buildWorkflow({
   heightNodeId?: string;
   fpsNodeId?: string;
   imageStrengthNodeId?: string;
+  outputNodeId?: string;
   width?: number;
   height?: number;
   fps?: number;
   segmentLengths?: number[];
   imageStrength?: number;
+  outputTitle?: string;
 }) {
   const workflow = cloneWorkflow(baseWorkflow);
 
@@ -210,6 +241,7 @@ export function buildWorkflow({
     setOptionalValue(workflow, nodeId, segmentLengths?.[index]);
   });
   setOptionalValue(workflow, imageStrengthNodeId, imageStrength);
+  setOutputFilenamePrefix(workflow, outputNodeId, outputTitle);
 
   return workflow;
 }

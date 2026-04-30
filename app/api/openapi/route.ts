@@ -542,7 +542,7 @@ export async function GET() {
                 title: {
                   type: "string",
                   description:
-                    "Used as the Google Drive video filename after generation.",
+                    "Used as the ComfyUI output filename prefix.",
                   example: "My YouTube Short Title",
                 },
                 global_prompt: { type: "string" },
@@ -579,7 +579,7 @@ export async function GET() {
                 title: {
                   type: "string",
                   description:
-                    "Used as the Google Drive video filename after generation.",
+                    "Used as the ComfyUI output filename prefix.",
                   example: "My YouTube Short Title",
                 },
                 global_prompt: { type: "string" },

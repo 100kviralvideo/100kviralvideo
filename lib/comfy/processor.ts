@@ -18,6 +18,7 @@ export type ComfyGenerationOptions = {
 
 export type ComfyProcessJobInput = {
   jobId: string;
+  title?: string;
   globalPrompt: string;
   segmentPrompts: string[];
   imagePaths: string[];
@@ -73,6 +74,7 @@ function assertSupportedImageBuffer(buffer: Buffer, source: string) {
 
 export async function processComfyVideoJob({
   jobId,
+  title,
   globalPrompt,
   segmentPrompts,
   imagePaths,
@@ -80,6 +82,7 @@ export async function processComfyVideoJob({
 }: ComfyProcessJobInput) {
   const queuedJob = await queueComfyVideoJob({
     jobId,
+    title,
     globalPrompt,
     segmentPrompts,
     imagePaths,
@@ -99,6 +102,7 @@ export async function processComfyVideoJob({
 
 export async function queueComfyVideoJob({
   jobId,
+  title,
   globalPrompt,
   segmentPrompts,
   imagePaths,
@@ -128,11 +132,13 @@ export async function queueComfyVideoJob({
       fpsNodeId: settings.fpsNodeId,
       segmentLengthNodeIds: settings.segmentLengthNodeIds,
       imageStrengthNodeId: settings.imageStrengthNodeId,
+      outputNodeId: settings.outputNodeId,
       width: options.width,
       height: options.height,
       fps: options.fps,
       segmentLengths: options.segment_lengths,
       imageStrength: options.image_strength,
+      outputTitle: title,
     });
 
     await updateComfyJob(jobId, { status: "queued_in_comfy" });

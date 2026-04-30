@@ -77,8 +77,13 @@ export async function GET() {
       process.env.GOOGLE_DRIVE_FOLDER_ID?.trim()
     ),
     comfy_job_store_drive_configured: Boolean(
-      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
+      ["1", "true", "yes", "on"].includes(
+        process.env.COMFY_STORE_JOB_JSON_IN_DRIVE?.trim().toLowerCase() || ""
+      ) &&
+        process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
         isGoogleDriveConfigured()
     ),
+    comfy_store_job_json_in_drive:
+      process.env.COMFY_STORE_JOB_JSON_IN_DRIVE?.trim() || "false",
   });
 }

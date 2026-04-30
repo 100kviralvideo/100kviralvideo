@@ -44,8 +44,14 @@ function getDriveJobFileName(jobId: string) {
 }
 
 function isDriveJobStoreConfigured() {
+  const shouldStoreJobsInDrive = ["1", "true", "yes", "on"].includes(
+    process.env.COMFY_STORE_JOB_JSON_IN_DRIVE?.trim().toLowerCase() || ""
+  );
+
   return Boolean(
-    process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() && isGoogleDriveConfigured()
+    shouldStoreJobsInDrive &&
+      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() &&
+      isGoogleDriveConfigured()
   );
 }
 

@@ -33,8 +33,6 @@ type ApprovalForm = {
   description: string;
   hashtags: string;
   durationSec: string;
-  humanApproved: boolean;
-  rightsCleared: boolean;
   selectedPlatforms: Record<PlatformName, boolean>;
 };
 
@@ -57,8 +55,6 @@ const defaultApprovalForm: ApprovalForm = {
   description: "AI-generated movie commentary.",
   hashtags: "movies, film, shorts",
   durationSec: "60",
-  humanApproved: false,
-  rightsCleared: false,
   selectedPlatforms: {
     youtube_shorts: true,
     instagram_reels: false,
@@ -320,11 +316,6 @@ export function Dashboard() {
       return;
     }
 
-    if (!approvalForm.humanApproved || !approvalForm.rightsCleared) {
-      setWorkflowError("Human approval and rights clearance are required.");
-      return;
-    }
-
     if (selectedPlatforms.length === 0) {
       setWorkflowError("Select at least one platform.");
       return;
@@ -350,8 +341,8 @@ export function Dashboard() {
             description: approvalForm.description,
             hashtags: parseHashtags(approvalForm.hashtags),
             duration_sec: Number(approvalForm.durationSec),
-            human_approved: approvalForm.humanApproved,
-            rights_cleared: approvalForm.rightsCleared,
+            human_approved: true,
+            rights_cleared: true,
             ai_generated: true,
             platforms: selectedPlatforms,
           }),
@@ -491,12 +482,16 @@ export function Dashboard() {
           <div className="border-b border-zinc-200 px-4 py-3">
             <h2 className="text-base font-semibold">Review and Publish</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Find the generated Drive file, review the publishing metadata, then
-              approve it before calling the Publisher API.
+              Check that the Drive upload is complete, find the final video URL,
+              review the content, then approve to publish.
             </p>
           </div>
 
-          <div className="grid gap-5 p-4 lg:grid-cols-[1fr_1fr]">
+          <div
+            className={`grid gap-5 p-4 ${
+              driveVideo ? "lg:grid-cols-[0.9fr_1.1fr]" : ""
+            }`}
+          >
             <div className="space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-zinc-700">
@@ -556,8 +551,21 @@ export function Dashboard() {
 
               {driveVideo ? (
                 <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                  <p className="text-xs font-semibold uppercase text-emerald-700">
+                    Upload complete
+                  </p>
                   <p className="font-medium">{driveVideo.name}</p>
                   <p className="mt-1 break-all">{driveVideo.final_video_url}</p>
+                  {driveVideo.web_view_link ? (
+                    <a
+                      className="mt-2 inline-flex text-xs font-medium text-emerald-800 underline"
+                      href={driveVideo.web_view_link}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      Open in Drive
+                    </a>
+                  ) : null}
                   {driveVideo.warning ? (
                     <p className="mt-2 text-amber-800">{driveVideo.warning}</p>
                   ) : null}
@@ -565,7 +573,21 @@ export function Dashboard() {
               ) : null}
             </div>
 
-            <div className="space-y-4">
+            {driveVideo ? (
+            <div className="space-y-4 rounded border border-zinc-200 bg-zinc-50 p-4">
+              <div>
+                <p className="text-xs font-semibold uppercase text-zinc-500">
+                  Human review
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-zinc-950">
+                  Preview content before publish
+                </h3>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Clicking approve confirms human approval and rights clearance
+                  for the selected platforms.
+                </p>
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="text-sm font-medium text-zinc-700">Job ID</span>
@@ -645,8 +667,10 @@ export function Dashboard() {
                 />
               </label>
             </div>
+            ) : null}
           </div>
 
+          {driveVideo ? (
           <div className="border-t border-zinc-200 p-4">
             <div className="flex flex-wrap gap-3">
               {platforms.map((platform) => (
@@ -668,39 +692,12 @@ export function Dashboard() {
               ))}
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="flex items-start gap-3 rounded border border-zinc-200 bg-white p-3 text-sm text-zinc-800">
-                <input
-                  checked={approvalForm.humanApproved}
-                  className="mt-0.5 h-4 w-4"
-                  onChange={(event) =>
-                    updateApprovalForm("humanApproved", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                <span>Human reviewed and approved this clip for publishing.</span>
-              </label>
-              <label className="flex items-start gap-3 rounded border border-zinc-200 bg-white p-3 text-sm text-zinc-800">
-                <input
-                  checked={approvalForm.rightsCleared}
-                  className="mt-0.5 h-4 w-4"
-                  onChange={(event) =>
-                    updateApprovalForm("rightsCleared", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                <span>Rights are cleared for the selected platforms.</span>
-              </label>
-            </div>
-
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 className="rounded border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-200 disabled:text-zinc-500"
                 disabled={
                   publishing ||
                   !driveVideo ||
-                  !approvalForm.humanApproved ||
-                  !approvalForm.rightsCleared ||
                   !approvalForm.jobId.trim() ||
                   !approvalForm.title.trim() ||
                   !approvalForm.caption.trim()
@@ -723,6 +720,7 @@ export function Dashboard() {
               ) : null}
             </div>
           </div>
+          ) : null}
         </section>
 
         <section className="mt-6 rounded-lg border border-zinc-200 bg-white">

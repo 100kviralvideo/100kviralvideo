@@ -395,3 +395,40 @@ export async function updatePrePublishStatus(
 
   return next;
 }
+
+export async function updatePrePublishDetails(
+  jobId: string,
+  update: {
+    title?: string;
+    caption?: string;
+    description?: string;
+    hashtags?: string[];
+  }
+) {
+  const current = await getLatestPrePublishItem(jobId);
+
+  if (!current) {
+    throw new Error(`No pre-publish queue item found for job_id "${jobId}"`);
+  }
+
+  const next: PrePublishQueueItem = {
+    ...current.item,
+    updated_at: new Date().toISOString(),
+    title: update.title ?? current.item.title,
+    caption: update.caption ?? current.item.caption,
+    description: update.description ?? current.item.description,
+    hashtags: update.hashtags ?? current.item.hashtags,
+  };
+  const { sheets, spreadsheetId, sheetName } = createSheetsClient();
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${quoteSheetName(sheetName)}!A${current.rowNumber}:Q${current.rowNumber}`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [rowValues(next)],
+    },
+  });
+
+  return next;
+}

@@ -79,24 +79,72 @@ function PendingClipCard({
   item,
   approving,
   onApprove,
+  onUpdate,
 }: {
   item: PrePublishQueueItem;
   approving: boolean;
   onApprove: (jobId: string) => void;
+  onUpdate: () => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editTitle, setEditTitle] = useState(item.title);
+  const [editCaption, setEditCaption] = useState(item.caption);
+  const [editDescription, setEditDescription] = useState(item.description);
+  const [editHashtags, setEditHashtags] = useState(item.hashtags.join(" "));
+
   const hashtags = useMemo(
     () => item.hashtags.map(formatHashtag).filter(Boolean),
     [item.hashtags]
   );
 
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/pre-publish/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_id: item.job_id,
+          title: editTitle,
+          caption: editCaption,
+          description: editDescription,
+          hashtags: editHashtags.split(/\s+/).filter(Boolean).map(formatHashtag),
+        }),
+      });
+      if (response.ok) {
+        setIsEditing(false);
+        onUpdate();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to update");
+      }
+    } catch (e: any) {
+      alert(e.message || "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCancel() {
+    setEditTitle(item.title);
+    setEditCaption(item.caption);
+    setEditDescription(item.description);
+    setEditHashtags(item.hashtags.join(" "));
+    setIsEditing(false);
+  }
+
   return (
     <article className="grid gap-5 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(280px,420px)_1fr]">
       <div className="overflow-hidden rounded bg-zinc-950">
-        <video
-          className="aspect-[9/16] max-h-[620px] w-full bg-zinc-950 object-contain"
-          controls
-          preload="metadata"
-          src={item.final_video_url}
+        <iframe
+          allow="autoplay; fullscreen"
+          className="aspect-[9/16] max-h-[620px] w-full border-0 bg-zinc-950 object-contain"
+          src={
+            item.drive_file?.web_view_link
+              ? item.drive_file.web_view_link.replace(/\/view.*/, "/preview")
+              : item.final_video_url
+          }
         />
       </div>
 
@@ -106,9 +154,17 @@ function PendingClipCard({
             <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">
               {item.job_id}
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-zinc-950">
-              {item.title}
-            </h2>
+            {isEditing ? (
+              <input
+                className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-xl font-semibold text-zinc-950 focus:border-zinc-500 focus:outline-none"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+            ) : (
+              <h2 className="mt-1 text-xl font-semibold text-zinc-950">
+                {item.title}
+              </h2>
+            )}
           </div>
           <span className="rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
             waiting approval
@@ -119,18 +175,34 @@ function PendingClipCard({
           <div>
             <dt className="font-medium text-zinc-950">Caption</dt>
             <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
-              {item.caption}
+              {isEditing ? (
+                <textarea
+                  className="block w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                  rows={3}
+                  value={editCaption}
+                  onChange={(e) => setEditCaption(e.target.value)}
+                />
+              ) : (
+                item.caption
+              )}
             </dd>
           </div>
 
-          {item.description ? (
-            <div>
-              <dt className="font-medium text-zinc-950">Description</dt>
-              <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
-                {item.description}
-              </dd>
-            </div>
-          ) : null}
+          <div>
+            <dt className="font-medium text-zinc-950">Description</dt>
+            <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+              {isEditing ? (
+                <textarea
+                  className="block w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                  rows={4}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                />
+              ) : (
+                item.description || <span className="text-zinc-400 italic">No description</span>
+              )}
+            </dd>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -150,7 +222,14 @@ function PendingClipCard({
           <div>
             <dt className="font-medium text-zinc-950">Hashtags</dt>
             <dd className="mt-2 flex flex-wrap gap-2">
-              {hashtags.length ? (
+              {isEditing ? (
+                <input
+                  className="block w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                  placeholder="e.g. #funny #video"
+                  value={editHashtags}
+                  onChange={(e) => setEditHashtags(e.target.value)}
+                />
+              ) : hashtags.length ? (
                 hashtags.map((hashtag) => (
                   <span
                     className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700"
@@ -182,22 +261,52 @@ function PendingClipCard({
         </dl>
 
         <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-4">
-          <button
-            className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-            disabled={approving}
-            onClick={() => onApprove(item.job_id)}
-            type="button"
-          >
-            {approving ? "Publishing..." : "Approve and publish"}
-          </button>
-          <a
-            className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-            href={item.final_video_url}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Open video URL
-          </a>
+          {!isEditing ? (
+            <>
+              <button
+                className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                disabled={approving}
+                onClick={() => onApprove(item.job_id)}
+                type="button"
+              >
+                {approving ? "Publishing..." : "Approve and publish"}
+              </button>
+              <button
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                onClick={() => setIsEditing(true)}
+                type="button"
+              >
+                Edit
+              </button>
+              <a
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                href={item.drive_file?.web_view_link || item.final_video_url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open video URL
+              </a>
+            </>
+          ) : (
+            <>
+              <button
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-400"
+                disabled={saving}
+                onClick={handleSave}
+                type="button"
+              >
+                {saving ? "Saving..." : "Save changes"}
+              </button>
+              <button
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={saving}
+                onClick={handleCancel}
+                type="button"
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </div>
     </article>
@@ -355,6 +464,7 @@ export function Dashboard() {
                 item={item}
                 key={`${item.job_id}-${item.created_at}`}
                 onApprove={approve}
+                onUpdate={loadPending}
               />
             ))}
           </section>

@@ -1,25 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google } from "googleapis";
+import { findDriveVideo } from "@/lib/drive-video";
 
 export const runtime = "nodejs";
 
-type FindVideoBody = {
-  folder_id: string;
-  video_filename: string;
-};
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-
-  return value;
 }
 
 function validateAuth(req: NextRequest) {
@@ -76,36 +61,6 @@ async function parseBody(req: NextRequest) {
   };
 }
 
-function createDriveClient() {
-  const clientEmail = getRequiredEnv("GOOGLE_DRIVE_CLIENT_EMAIL");
-  const privateKey = getRequiredEnv("GOOGLE_DRIVE_PRIVATE_KEY").replace(
-    /\\n/g,
-    "\n"
-  );
-  const auth = new google.auth.JWT({
-    email: clientEmail,
-    key: privateKey,
-    scopes: ["https://www.googleapis.com/auth/drive"],
-  });
-
-  return google.drive({ version: "v3", auth });
-}
-
-function escapeDriveQueryValue(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function buildDriveQuery({ folder_id, video_filename }: FindVideoBody) {
-  const folderId = escapeDriveQueryValue(folder_id);
-  const filename = escapeDriveQueryValue(video_filename);
-
-  return [
-    `name = '${filename}'`,
-    `'${folderId}' in parents`,
-    "trashed = false",
-  ].join(" and ");
-}
-
 export async function POST(req: NextRequest) {
   if (!validateAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -118,19 +73,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const drive = createDriveClient();
-    const filesResponse = await drive.files.list({
-      q: buildDriveQuery(body),
-      orderBy: "createdTime desc",
-      pageSize: 10,
-      fields:
-        "files(id,name,mimeType,size,createdTime,webViewLink,webContentLink)",
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
+    const file = await findDriveVideo({
+      folderId: body.folder_id,
+      videoFilename: body.video_filename,
     });
-    const files = filesResponse.data.files ?? [];
 
-    if (files.length === 0) {
+    if (!file) {
       return NextResponse.json(
         {
           error: `No video file named "${body.video_filename}" was found in the requested folder.`,
@@ -139,52 +87,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const selectedFile = files[0];
-
-    if (!selectedFile.id) {
-      throw new Error("Google Drive returned a file without an id");
-    }
-
-    try {
-      await drive.permissions.create({
-        fileId: selectedFile.id,
-        requestBody: {
-          type: "anyone",
-          role: "reader",
-        },
-        supportsAllDrives: true,
-      });
-    } catch (permissionError) {
-      const message =
-        permissionError instanceof Error ? permissionError.message : "";
-
-      if (!message.toLowerCase().includes("permission already exists")) {
-        throw permissionError;
-      }
-    }
-
-    const refreshedFileResponse = await drive.files.get({
-      fileId: selectedFile.id,
-      fields: "id,name,mimeType,size,createdTime,webViewLink,webContentLink",
-      supportsAllDrives: true,
-    });
-    const file = refreshedFileResponse.data;
-
-    return NextResponse.json({
-      success: true,
-      file_id: file.id,
-      name: file.name,
-      mime_type: file.mimeType,
-      size: file.size,
-      created_time: file.createdTime,
-      web_view_link: file.webViewLink,
-      web_content_link: file.webContentLink,
-      final_video_url: `https://drive.google.com/uc?export=download&id=${file.id}`,
-      warning:
-        files.length > 1
-          ? "Multiple files found; newest file selected."
-          : null,
-    });
+    return NextResponse.json(file);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown Drive error";
 

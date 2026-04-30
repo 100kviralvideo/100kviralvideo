@@ -24,16 +24,16 @@ type DriveVideoResult = {
   warning?: string | null;
 };
 
-type ApprovalForm = {
-  folderId: string;
-  videoFilename: string;
-  jobId: string;
+type ReviewClip = {
+  id: string;
   title: string;
   caption: string;
   description: string;
-  hashtags: string;
-  durationSec: string;
-  selectedPlatforms: Record<PlatformName, boolean>;
+  hashtags: string[];
+  duration_sec: number;
+  ai_generated: boolean;
+  platforms: Array<{ platform: PlatformName; privacy?: string }>;
+  drive_video: DriveVideoResult;
 };
 
 const platforms: Array<{ id: PlatformName; label: string; accent: string }> = [
@@ -45,22 +45,6 @@ const platforms: Array<{ id: PlatformName; label: string; accent: string }> = [
   },
   { id: "tiktok", label: "TikTok", accent: "bg-zinc-950" },
 ];
-
-const defaultApprovalForm: ApprovalForm = {
-  folderId: "",
-  videoFilename: "",
-  jobId: "",
-  title: "",
-  caption: "",
-  description: "AI-generated movie commentary.",
-  hashtags: "movies, film, shorts",
-  durationSec: "60",
-  selectedPlatforms: {
-    youtube_shorts: true,
-    instagram_reels: false,
-    tiktok: false,
-  },
-};
 
 const statusStyles: Record<string, string> = {
   uploaded: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -150,17 +134,6 @@ function countPlatformFailures(
   }, 0);
 }
 
-function inputClassName(extra = "") {
-  return `w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none transition focus:border-zinc-900 focus:ring-2 focus:ring-zinc-200 ${extra}`;
-}
-
-function parseHashtags(value: string) {
-  return value
-    .split(",")
-    .map((hashtag) => hashtag.trim().replace(/^#/, ""))
-    .filter(Boolean);
-}
-
 async function readJsonResponse(response: Response) {
   const data = await response.json();
 
@@ -181,38 +154,45 @@ export function Dashboard() {
   const [historySource, setHistorySource] = useState("memory");
   const [config, setConfig] = useState<ConfigStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [publisherApiKey, setPublisherApiKey] = useState("");
-  const [approvalForm, setApprovalForm] =
-    useState<ApprovalForm>(defaultApprovalForm);
-  const [driveVideo, setDriveVideo] = useState<DriveVideoResult | null>(null);
+  const [reviewClips, setReviewClips] = useState<ReviewClip[]>([]);
+  const [reviewQueueConfigured, setReviewQueueConfigured] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState(true);
   const [workflowMessage, setWorkflowMessage] = useState<string | null>(null);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
-  const [findingVideo, setFindingVideo] = useState(false);
-  const [publishing, setPublishing] = useState(false);
+  const [approvingClipId, setApprovingClipId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function loadDashboard() {
       try {
-        const [historyResponse, configResponse] = await Promise.all([
+        const [historyResponse, configResponse, reviewResponse] =
+          await Promise.all([
           fetch("/api/history", { cache: "no-store" }),
           fetch("/api/config-check", { cache: "no-store" }),
+          fetch("/api/review/pending", { cache: "no-store" }),
         ]);
         const historyData = (await historyResponse.json()) as {
           source?: string;
           history?: PublishHistoryItem[];
         };
         const configData = (await configResponse.json()) as ConfigStatus;
+        const reviewData = (await reviewResponse.json()) as {
+          configured?: boolean;
+          clips?: ReviewClip[];
+        };
 
         if (active) {
           setHistory(historyData.history ?? []);
           setHistorySource(historyData.source ?? "memory");
           setConfig(configData);
+          setReviewQueueConfigured(Boolean(reviewData.configured));
+          setReviewClips(reviewData.clips ?? []);
         }
       } finally {
         if (active) {
           setLoading(false);
+          setReviewLoading(false);
         }
       }
     }
@@ -226,30 +206,6 @@ export function Dashboard() {
     };
   }, []);
 
-  function updateApprovalForm<TField extends keyof ApprovalForm>(
-    field: TField,
-    value: ApprovalForm[TField]
-  ) {
-    setApprovalForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
-
-  function updatePlatform(platform: PlatformName, checked: boolean) {
-    setApprovalForm((current) => ({
-      ...current,
-      selectedPlatforms: {
-        ...current.selectedPlatforms,
-        [platform]: checked,
-      },
-    }));
-  }
-
-  function rememberPublisherKey(value: string) {
-    setPublisherApiKey(value);
-  }
-
   async function refreshHistory() {
     const historyResponse = await fetch("/api/history", { cache: "no-store" });
     const historyData = (await historyResponse.json()) as {
@@ -261,100 +217,42 @@ export function Dashboard() {
     setHistorySource(historyData.source ?? "memory");
   }
 
-  async function findDriveVideo() {
-    setFindingVideo(true);
-    setWorkflowError(null);
-    setWorkflowMessage(null);
-    setDriveVideo(null);
+  async function refreshReviewQueue() {
+    const reviewResponse = await fetch("/api/review/pending", {
+      cache: "no-store",
+    });
+    const reviewData = (await reviewResponse.json()) as {
+      configured?: boolean;
+      clips?: ReviewClip[];
+    };
 
-    try {
-      const data = (await readJsonResponse(
-        await fetch("/api/drive/find-video", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${publisherApiKey.trim()}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            folder_id: approvalForm.folderId,
-            video_filename: approvalForm.videoFilename,
-          }),
-        })
-      )) as DriveVideoResult;
-
-      setDriveVideo(data);
-      setWorkflowMessage("Video found. Review the details and approve publish.");
-
-      setApprovalForm((current) => ({
-        ...current,
-        jobId:
-          current.jobId ||
-          current.videoFilename.replace(/\.[^.]+$/, "") ||
-          `job_${Date.now()}`,
-        title: current.title || current.videoFilename.replace(/\.[^.]+$/, ""),
-      }));
-    } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : "Find video failed");
-    } finally {
-      setFindingVideo(false);
-    }
+    setReviewQueueConfigured(Boolean(reviewData.configured));
+    setReviewClips(reviewData.clips ?? []);
   }
 
-  async function publishApprovedClip() {
-    const selectedPlatforms = platforms
-      .filter((platform) => approvalForm.selectedPlatforms[platform.id])
-      .map((platform) => {
-        if (platform.id === "youtube_shorts") {
-          return { platform: platform.id, privacy: "private" };
-        }
-
-        return { platform: platform.id };
-      });
-
-    if (!driveVideo) {
-      setWorkflowError("Find the final video before publishing.");
-      return;
-    }
-
-    if (selectedPlatforms.length === 0) {
-      setWorkflowError("Select at least one platform.");
-      return;
-    }
-
-    setPublishing(true);
+  async function approveClip(clipId: string) {
+    setApprovingClipId(clipId);
     setWorkflowError(null);
     setWorkflowMessage(null);
 
     try {
       const data = await readJsonResponse(
-        await fetch("/api/publish", {
+        await fetch("/api/review/approve", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${publisherApiKey.trim()}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            job_id: approvalForm.jobId,
-            final_video_url: driveVideo.final_video_url,
-            title: approvalForm.title,
-            caption: approvalForm.caption,
-            description: approvalForm.description,
-            hashtags: parseHashtags(approvalForm.hashtags),
-            duration_sec: Number(approvalForm.durationSec),
-            human_approved: true,
-            rights_cleared: true,
-            ai_generated: true,
-            platforms: selectedPlatforms,
-          }),
+          body: JSON.stringify({ id: clipId }),
         })
       );
 
       setWorkflowMessage(`Publish processed for ${data.job_id}.`);
       await refreshHistory();
+      await refreshReviewQueue();
     } catch (error) {
       setWorkflowError(error instanceof Error ? error.message : "Publish failed");
     } finally {
-      setPublishing(false);
+      setApprovingClipId(null);
     }
   }
 
@@ -479,235 +377,120 @@ export function Dashboard() {
         </section>
 
         <section className="mt-6 rounded-lg border border-zinc-200 bg-white">
-          <div className="border-b border-zinc-200 px-4 py-3">
-            <h2 className="text-base font-semibold">Review and Publish</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Check that the Drive upload is complete, find the final video URL,
-              review the content, then approve to publish.
-            </p>
+          <div className="flex flex-col gap-2 border-b border-zinc-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Awaiting Approval</h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Ready clips appear here after the Drive upload is complete and
+                the final video URL has been resolved automatically.
+              </p>
+            </div>
+            <button
+              className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+              onClick={refreshReviewQueue}
+              type="button"
+            >
+              Refresh queue
+            </button>
           </div>
 
-          <div
-            className={`grid gap-5 p-4 ${
-              driveVideo ? "lg:grid-cols-[0.9fr_1.1fr]" : ""
-            }`}
-          >
-            <div className="space-y-4">
-              <label className="block">
-                <span className="text-sm font-medium text-zinc-700">
-                  Publisher API key
-                </span>
-                <input
-                  className={inputClassName("mt-1")}
-                  onChange={(event) => rememberPublisherKey(event.target.value)}
-                  placeholder="test_secret_key"
-                  type="password"
-                  value={publisherApiKey}
-                />
-              </label>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-medium text-zinc-700">
-                    Drive folder ID
-                  </span>
-                  <input
-                    className={inputClassName("mt-1")}
-                    onChange={(event) =>
-                      updateApprovalForm("folderId", event.target.value)
-                    }
-                    placeholder="Google Drive folder ID"
-                    value={approvalForm.folderId}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-zinc-700">
-                    Video filename
-                  </span>
-                  <input
-                    className={inputClassName("mt-1")}
-                    onChange={(event) =>
-                      updateApprovalForm("videoFilename", event.target.value)
-                    }
-                    placeholder="clip_xxx_final.mp4"
-                    value={approvalForm.videoFilename}
-                  />
-                </label>
-              </div>
-
-              <button
-                className="rounded border border-zinc-900 bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-200 disabled:text-zinc-500"
-                disabled={
-                  findingVideo ||
-                  !publisherApiKey.trim() ||
-                  !approvalForm.folderId.trim() ||
-                  !approvalForm.videoFilename.trim()
-                }
-                onClick={findDriveVideo}
-                type="button"
-              >
-                {findingVideo ? "Finding video" : "Find video"}
-              </button>
-
-              {driveVideo ? (
-                <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                  <p className="text-xs font-semibold uppercase text-emerald-700">
-                    Upload complete
-                  </p>
-                  <p className="font-medium">{driveVideo.name}</p>
-                  <p className="mt-1 break-all">{driveVideo.final_video_url}</p>
-                  {driveVideo.web_view_link ? (
-                    <a
-                      className="mt-2 inline-flex text-xs font-medium text-emerald-800 underline"
-                      href={driveVideo.web_view_link}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Open in Drive
-                    </a>
-                  ) : null}
-                  {driveVideo.warning ? (
-                    <p className="mt-2 text-amber-800">{driveVideo.warning}</p>
-                  ) : null}
-                </div>
-              ) : null}
+          {reviewLoading ? (
+            <div className="px-4 py-10 text-sm text-zinc-500">
+              Checking Drive for completed videos.
             </div>
-
-            {driveVideo ? (
-            <div className="space-y-4 rounded border border-zinc-200 bg-zinc-50 p-4">
-              <div>
-                <p className="text-xs font-semibold uppercase text-zinc-500">
-                  Human review
-                </p>
-                <h3 className="mt-1 text-lg font-semibold text-zinc-950">
-                  Preview content before publish
-                </h3>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Clicking approve confirms human approval and rights clearance
-                  for the selected platforms.
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-medium text-zinc-700">Job ID</span>
-                  <input
-                    className={inputClassName("mt-1")}
-                    onChange={(event) =>
-                      updateApprovalForm("jobId", event.target.value)
-                    }
-                    placeholder="youtube_test_001"
-                    value={approvalForm.jobId}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-zinc-700">
-                    Duration seconds
-                  </span>
-                  <input
-                    className={inputClassName("mt-1")}
-                    min="1"
-                    onChange={(event) =>
-                      updateApprovalForm("durationSec", event.target.value)
-                    }
-                    type="number"
-                    value={approvalForm.durationSec}
-                  />
-                </label>
-              </div>
-
-              <label className="block">
-                <span className="text-sm font-medium text-zinc-700">Title</span>
-                <input
-                  className={inputClassName("mt-1")}
-                  onChange={(event) =>
-                    updateApprovalForm("title", event.target.value)
-                  }
-                  placeholder="Why This Movie Ending Works"
-                  value={approvalForm.title}
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-zinc-700">Caption</span>
-                <textarea
-                  className={inputClassName("mt-1 min-h-20")}
-                  onChange={(event) =>
-                    updateApprovalForm("caption", event.target.value)
-                  }
-                  placeholder="This ending looks confusing, but it actually has one clear purpose."
-                  value={approvalForm.caption}
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-zinc-700">
-                  Description
-                </span>
-                <input
-                  className={inputClassName("mt-1")}
-                  onChange={(event) =>
-                    updateApprovalForm("description", event.target.value)
-                  }
-                  value={approvalForm.description}
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-zinc-700">
-                  Hashtags
-                </span>
-                <input
-                  className={inputClassName("mt-1")}
-                  onChange={(event) =>
-                    updateApprovalForm("hashtags", event.target.value)
-                  }
-                  placeholder="movies, film, shorts"
-                  value={approvalForm.hashtags}
-                />
-              </label>
+          ) : !reviewQueueConfigured ? (
+            <div className="px-4 py-10 text-sm text-zinc-500">
+              No review queue is configured yet. Add pending clips to
+              `REVIEW_QUEUE_JSON` when the real Drive folder and filename are
+              ready.
             </div>
-            ) : null}
-          </div>
-
-          {driveVideo ? (
-          <div className="border-t border-zinc-200 p-4">
-            <div className="flex flex-wrap gap-3">
-              {platforms.map((platform) => (
-                <label
-                  className="flex min-h-12 items-center gap-3 rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-800"
-                  key={platform.id}
+          ) : reviewClips.length === 0 ? (
+            <div className="px-4 py-10 text-sm text-zinc-500">
+              No uploaded videos are ready for approval yet.
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 xl:grid-cols-2">
+              {reviewClips.map((clip) => (
+                <article
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 p-4"
+                  key={clip.id}
                 >
-                  <input
-                    checked={approvalForm.selectedPlatforms[platform.id]}
-                    className="h-4 w-4"
-                    onChange={(event) =>
-                      updatePlatform(platform.id, event.target.checked)
-                    }
-                    type="checkbox"
-                  />
-                  <PlatformMark platform={platform.id} />
-                  {platform.label}
-                </label>
+                  <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                    <video
+                      className="aspect-[9/16] w-full rounded bg-black object-cover"
+                      controls
+                      preload="metadata"
+                      src={clip.drive_video.final_video_url}
+                    />
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-emerald-700">
+                          Ready for human approval
+                        </p>
+                        <h3 className="mt-1 text-lg font-semibold text-zinc-950">
+                          {clip.title}
+                        </h3>
+                        <p className="mt-1 text-xs text-zinc-500">{clip.id}</p>
+                      </div>
+
+                      <p className="text-sm leading-6 text-zinc-700">
+                        {clip.caption}
+                      </p>
+                      <p className="text-sm text-zinc-500">
+                        {clip.description}
+                      </p>
+
+                      <div className="flex flex-wrap gap-2">
+                        {clip.hashtags.map((hashtag) => (
+                          <span
+                            className="rounded bg-white px-2 py-1 text-xs font-medium text-zinc-600 ring-1 ring-zinc-200"
+                            key={hashtag}
+                          >
+                            #{hashtag.replace(/^#/, "")}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {clip.platforms.map((target) => (
+                          <span
+                            className="inline-flex items-center gap-2 rounded bg-white px-2 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200"
+                            key={target.platform}
+                          >
+                            <PlatformMark platform={target.platform} />
+                            {target.platform.replaceAll("_", " ")}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="rounded border border-zinc-200 bg-white p-3 text-xs text-zinc-500">
+                        <p className="font-medium text-zinc-700">
+                          {clip.drive_video.name}
+                        </p>
+                        <p className="mt-1 break-all">
+                          {clip.drive_video.final_video_url}
+                        </p>
+                      </div>
+
+                      <button
+                        className="rounded border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-200 disabled:text-zinc-500"
+                        disabled={approvingClipId === clip.id}
+                        onClick={() => approveClip(clip.id)}
+                        type="button"
+                      >
+                        {approvingClipId === clip.id
+                          ? "Publishing"
+                          : "Approve and publish"}
+                      </button>
+                    </div>
+                  </div>
+                </article>
               ))}
             </div>
+          )}
 
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                className="rounded border border-emerald-700 bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-200 disabled:text-zinc-500"
-                disabled={
-                  publishing ||
-                  !driveVideo ||
-                  !approvalForm.jobId.trim() ||
-                  !approvalForm.title.trim() ||
-                  !approvalForm.caption.trim()
-                }
-                onClick={publishApprovedClip}
-                type="button"
-              >
-                {publishing ? "Publishing" : "Approve and publish"}
-              </button>
-
+          {(workflowMessage || workflowError) && (
+            <div className="border-t border-zinc-200 px-4 py-3">
               {workflowMessage ? (
                 <span className="text-sm font-medium text-emerald-700">
                   {workflowMessage}
@@ -719,8 +502,7 @@ export function Dashboard() {
                 </span>
               ) : null}
             </div>
-          </div>
-          ) : null}
+          )}
         </section>
 
         <section className="mt-6 rounded-lg border border-zinc-200 bg-white">

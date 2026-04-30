@@ -1,5 +1,5 @@
 import { createReadStream } from "fs";
-import { stat } from "fs/promises";
+import { promises as fsPromises } from "fs";
 import path from "path";
 import { google } from "googleapis";
 
@@ -222,7 +222,7 @@ export async function uploadVideoToDrive({
   fileName?: string;
   makePublic?: boolean;
 }) {
-  await stat(filePath);
+  await fsPromises.stat(filePath);
 
   const drive = createGoogleDriveClient();
   const uploadName = fileName || path.basename(filePath);

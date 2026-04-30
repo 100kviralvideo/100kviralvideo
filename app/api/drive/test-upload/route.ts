@@ -17,6 +17,20 @@ function isFile(value: FormDataEntryValue | null): value is File {
   return value instanceof File;
 }
 
+function formatUploadError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : "Unknown Drive upload error";
+
+  if (message.includes("Service Accounts do not have storage quota")) {
+    return [
+      "Google Drive rejected the upload because service accounts do not have personal storage quota.",
+      "Use a Google Shared Drive, add the service account as a Content manager or Manager, create/select a folder inside that Shared Drive, and set GOOGLE_DRIVE_FOLDER_ID to that folder ID.",
+    ].join(" ");
+  }
+
+  return message;
+}
+
 export async function POST(req: NextRequest) {
   if (!validateAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -51,9 +65,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(uploadedFile);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown Drive upload error";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: formatUploadError(error) }, { status: 500 });
   }
 }

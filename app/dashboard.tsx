@@ -1,63 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { PublishHistoryItem } from "@/lib/publish-history";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import type { PrePublishQueueItem } from "@/lib/prepublish-queue";
 
-type ConfigStatus = {
-  publisher_api_key_configured: boolean;
-  youtube_client_id_configured: boolean;
-  youtube_client_secret_configured: boolean;
-  youtube_redirect_uri_configured: boolean;
-  youtube_refresh_token_configured: boolean;
+type PendingResponse = {
+  configured: boolean;
+  items: PrePublishQueueItem[];
+  error?: string;
 };
 
 type PlatformName = "youtube_shorts" | "instagram_reels" | "tiktok";
 
-const platforms: Array<{ id: PlatformName; label: string; accent: string }> = [
-  { id: "youtube_shorts", label: "YouTube Shorts", accent: "bg-red-600" },
-  {
-    id: "instagram_reels",
-    label: "Instagram Reels",
-    accent: "bg-fuchsia-600",
-  },
-  { id: "tiktok", label: "TikTok", accent: "bg-zinc-950" },
-];
-
-const statusStyles: Record<string, string> = {
-  uploaded: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  processed: "bg-sky-50 text-sky-700 ring-sky-200",
-  needs_manual_action: "bg-amber-50 text-amber-800 ring-amber-200",
-  not_implemented_yet: "bg-zinc-100 text-zinc-600 ring-zinc-200",
-  failed: "bg-rose-50 text-rose-700 ring-rose-200",
+const platformLabels: Record<PlatformName, string> = {
+  youtube_shorts: "YouTube Shorts",
+  instagram_reels: "Instagram Reels",
+  tiktok: "TikTok",
 };
 
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded px-2 py-1 text-xs font-medium ring-1 ring-inset ${
-        statusStyles[status] ?? "bg-zinc-100 text-zinc-700 ring-zinc-200"
-      }`}
-    >
-      {status.replaceAll("_", " ")}
-    </span>
-  );
-}
+function PlatformMark({ platform, small }: { platform: string; small?: boolean }) {
+  const sizeClass = small ? "h-6 w-6 text-[10px]" : "h-9 w-9 text-xs";
 
-function PlatformMark({ platform }: { platform: string }) {
   if (platform === "youtube_shorts") {
     return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-red-600 text-white shadow-sm">
-        <span className="ml-0.5 h-0 w-0 border-y-[7px] border-l-[11px] border-y-transparent border-l-white" />
+      <span className={`flex shrink-0 items-center justify-center rounded bg-red-600 text-white shadow-sm ${sizeClass}`}>
+        <span className={small ? "ml-[1px] h-0 w-0 border-y-[4px] border-l-[6px] border-y-transparent border-l-white" : "ml-0.5 h-0 w-0 border-y-[7px] border-l-[11px] border-y-transparent border-l-white"} />
       </span>
     );
   }
 
   if (platform === "instagram_reels") {
     return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[linear-gradient(135deg,#f97316,#db2777,#4f46e5)] text-white shadow-sm">
-        <span className="relative h-5 w-5 rounded border-2 border-white">
-          <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white" />
-          <span className="absolute right-0.5 top-0.5 h-1 w-1 rounded-full bg-white" />
+      <span className={`flex shrink-0 items-center justify-center rounded bg-[linear-gradient(135deg,#f97316,#db2777,#4f46e5)] text-white shadow-sm ${sizeClass}`}>
+        <span className={`relative rounded border-2 border-white ${small ? "h-3.5 w-3.5 border-[1.5px]" : "h-5 w-5 border-2"}`}>
+          <span className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white ${small ? "h-1 w-1" : "h-1.5 w-1.5"}`} />
+          <span className={`absolute right-[1px] top-[1px] rounded-full bg-white ${small ? "h-[2px] w-[2px]" : "h-1 w-1"}`} />
         </span>
       </span>
     );
@@ -65,19 +41,37 @@ function PlatformMark({ platform }: { platform: string }) {
 
   if (platform === "tiktok") {
     return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-zinc-950 text-lg font-black text-white shadow-sm">
+      <span className={`flex shrink-0 items-center justify-center rounded bg-zinc-950 font-black text-white shadow-sm ${sizeClass} ${small ? "text-[10px]" : "text-lg"}`}>
         <span className="relative">
-          <span className="absolute -left-0.5 top-0 text-cyan-300">♪</span>
-          <span className="absolute left-0.5 top-0 text-rose-400">♪</span>
-          <span className="relative">♪</span>
+          <span className="absolute -left-0.5 top-0 text-cyan-300">T</span>
+          <span className="absolute left-0.5 top-0 text-rose-400">T</span>
+          <span className="relative">T</span>
         </span>
       </span>
     );
   }
 
   return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-zinc-200 text-xs font-semibold text-zinc-600">
+    <span className={`flex shrink-0 items-center justify-center rounded bg-zinc-200 font-semibold text-zinc-600 ${sizeClass}`}>
       API
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: PrePublishQueueItem["status"] }) {
+  const styles = {
+    published: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+    failed: "bg-rose-50 text-rose-800 ring-rose-200",
+    publishing: "bg-blue-50 text-blue-800 ring-blue-200",
+    pending: "bg-amber-50 text-amber-800 ring-amber-200",
+  };
+  return (
+    <span
+      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${
+        styles[status] || "bg-zinc-50 text-zinc-800 ring-zinc-200"
+      }`}
+    >
+      {status}
     </span>
   );
 }
@@ -91,61 +85,567 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function countPlatformJobs(history: PublishHistoryItem[], platform: PlatformName) {
-  return history.reduce((count, job) => {
-    return count + job.results.filter((result) => result.platform === platform).length;
-  }, 0);
+function formatHashtag(hashtag: string) {
+  const trimmed = hashtag.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
 }
 
-function countPlatformFailures(
-  history: PublishHistoryItem[],
-  platform: PlatformName
-) {
-  return history.reduce((count, job) => {
-    return (
-      count +
-      job.results.filter(
-        (result) => result.platform === platform && result.status === "failed"
-      ).length
-    );
-  }, 0);
+function PendingClipCard({
+  item,
+  approving,
+  onApprove,
+  onUpdate,
+}: {
+  item: PrePublishQueueItem;
+  approving: boolean;
+  onApprove: (jobId: string) => void;
+  onUpdate: () => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editTitle, setEditTitle] = useState(item.title);
+  const [editCaption, setEditCaption] = useState(item.caption);
+  const [editDescription, setEditDescription] = useState(item.description);
+  const [editHashtags, setEditHashtags] = useState(item.hashtags.join(" "));
+
+  const hashtags = useMemo(
+    () => item.hashtags.map(formatHashtag).filter(Boolean),
+    [item.hashtags]
+  );
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/pre-publish/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_id: item.job_id,
+          title: editTitle,
+          caption: editCaption,
+          description: editDescription,
+          hashtags: editHashtags.split(/\s+/).filter(Boolean).map(formatHashtag),
+        }),
+      });
+      if (response.ok) {
+        setIsEditing(false);
+        onUpdate();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to update");
+      }
+    } catch (e: any) {
+      alert(e.message || "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCancel() {
+    setEditTitle(item.title);
+    setEditCaption(item.caption);
+    setEditDescription(item.description);
+    setEditHashtags(item.hashtags.join(" "));
+    setIsEditing(false);
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
+      <div className="overflow-hidden rounded bg-zinc-950">
+        <iframe
+          allow="autoplay; fullscreen"
+          className="aspect-[9/16] max-h-[620px] w-full border-0 bg-zinc-950 object-contain"
+          src={
+            item.drive_file?.web_view_link
+              ? item.drive_file.web_view_link.replace(/\/view.*/, "/preview")
+              : item.final_video_url
+          }
+        />
+      </div>
+
+      <div className="flex min-w-0 flex-col">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">
+              {item.job_id}
+            </p>
+            {isEditing ? (
+              <input
+                className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-xl font-semibold text-zinc-950 focus:border-zinc-500 focus:outline-none"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+            ) : (
+              <h2 className="mt-1 text-xl font-semibold text-zinc-950">
+                {item.title}
+              </h2>
+            )}
+          </div>
+        </div>
+
+        <dl className="mt-5 grid gap-4 text-sm">
+          <div>
+            <dt className="font-medium text-zinc-950">Caption</dt>
+            <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+              {isEditing ? (
+                <textarea
+                  className="block w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                  rows={3}
+                  value={editCaption}
+                  onChange={(e) => setEditCaption(e.target.value)}
+                />
+              ) : (
+                item.caption
+              )}
+            </dd>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Description</dt>
+            <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+              {isEditing ? (
+                <textarea
+                  className="block w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                  rows={4}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                />
+              ) : (
+                item.description || <span className="text-zinc-400 italic">No description</span>
+              )}
+            </dd>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="font-medium text-zinc-950">Duration</dt>
+              <dd className="mt-1 text-zinc-700">
+                {item.duration_sec ? `${item.duration_sec}s` : "Unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-zinc-950">Found</dt>
+              <dd className="mt-1 text-zinc-700">
+                {formatDate(item.created_at)}
+              </dd>
+            </div>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Hashtags</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {isEditing ? (
+                <input
+                  className="block w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                  placeholder="e.g. #funny #video"
+                  value={editHashtags}
+                  onChange={(e) => setEditHashtags(e.target.value)}
+                />
+              ) : hashtags.length ? (
+                hashtags.map((hashtag) => (
+                  <span
+                    className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700"
+                    key={hashtag}
+                  >
+                    {hashtag}
+                  </span>
+                ))
+              ) : (
+                <span className="text-zinc-500">No hashtags</span>
+              )}
+            </dd>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Platforms</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {item.platforms.map((target) => (
+                <span
+                  className="inline-flex items-center gap-2 rounded border border-zinc-200 bg-white px-2 py-1 text-sm font-medium text-zinc-800"
+                  key={`${item.job_id}-${target.platform}`}
+                >
+                  <PlatformMark platform={target.platform} />
+                  {platformLabels[target.platform] ?? target.platform}
+                </span>
+              ))}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-4">
+          {!isEditing ? (
+            <>
+              <button
+                className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                disabled={approving}
+                onClick={() => onApprove(item.job_id)}
+                type="button"
+              >
+                {approving ? "Publishing..." : "Approve and publish"}
+              </button>
+              <button
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                onClick={() => setIsEditing(true)}
+                type="button"
+              >
+                Edit
+              </button>
+              <a
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                href={item.drive_file?.web_view_link || item.final_video_url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open video URL
+              </a>
+            </>
+          ) : (
+            <>
+              <button
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-400"
+                disabled={saving}
+                onClick={handleSave}
+                type="button"
+              >
+                {saving ? "Saving..." : "Save changes"}
+              </button>
+              <button
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={saving}
+                onClick={handleCancel}
+                type="button"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryClipCard({ item }: { item: PrePublishQueueItem }) {
+  const hashtags = useMemo(
+    () => item.hashtags.map(formatHashtag).filter(Boolean),
+    [item.hashtags]
+  );
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr] items-start">
+      <div className="overflow-hidden rounded bg-zinc-950">
+        <iframe
+          allow="autoplay; fullscreen"
+          className="aspect-[9/16] max-h-[620px] w-full border-0 bg-zinc-950 object-contain"
+          src={
+            item.drive_file?.web_view_link
+              ? item.drive_file.web_view_link.replace(/\/view.*/, "/preview")
+              : item.final_video_url
+          }
+        />
+      </div>
+
+      <div className="flex min-w-0 flex-col">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">
+              {item.job_id}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-zinc-950">
+              {item.title}
+            </h2>
+          </div>
+        </div>
+
+        <dl className="mt-5 grid gap-4 text-sm opacity-90">
+          <div>
+            <dt className="font-medium text-zinc-950">Caption</dt>
+            <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+              {item.caption}
+            </dd>
+          </div>
+
+          {item.description ? (
+            <div>
+              <dt className="font-medium text-zinc-950">Description</dt>
+              <dd className="mt-1 whitespace-pre-wrap text-zinc-700">
+                {item.description}
+              </dd>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="font-medium text-zinc-950">Duration</dt>
+              <dd className="mt-1 text-zinc-700">
+                {item.duration_sec ? `${item.duration_sec}s` : "Unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-zinc-950">Updated</dt>
+              <dd className="mt-1 text-zinc-700">
+                {formatDate(item.updated_at)}
+              </dd>
+            </div>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Hashtags</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {hashtags.length ? (
+                hashtags.map((hashtag) => (
+                  <span
+                    className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700"
+                    key={hashtag}
+                  >
+                    {hashtag}
+                  </span>
+                ))
+              ) : (
+                <span className="text-zinc-500">No hashtags</span>
+              )}
+            </dd>
+          </div>
+
+          <div>
+            <dt className="font-medium text-zinc-950">Platforms</dt>
+            <dd className="mt-2 flex flex-wrap gap-2">
+              {item.platforms.map((target) => (
+                <span
+                  className="inline-flex items-center gap-2 rounded border border-zinc-200 bg-white px-2 py-1 text-sm font-medium text-zinc-800"
+                  key={`${item.job_id}-${target.platform}`}
+                >
+                  <PlatformMark platform={target.platform} />
+                  {platformLabels[target.platform] ?? target.platform}
+                </span>
+              ))}
+            </dd>
+          </div>
+          
+          {item.error ? (
+            <div>
+              <dt className="font-medium text-rose-700">Error Message</dt>
+              <dd className="mt-1 text-rose-600 font-mono text-xs p-2 bg-rose-50 border border-rose-100 rounded">
+                {item.error}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-4">
+          <a
+            className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            href={item.drive_file?.web_view_link || item.final_video_url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open Drive Video
+          </a>
+          {item.publish_result && Array.isArray((item.publish_result as any).results) ? (
+            (item.publish_result as any).results.map((res: any, idx: number) => 
+              res.youtube_url ? (
+                <a
+                  key={idx}
+                  className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 flex items-center gap-2"
+                  href={res.youtube_url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <PlatformMark platform="youtube_shorts" /> View on YouTube
+                </a>
+              ) : null
+            )
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PendingTable({
+  items,
+  approvingJobId,
+  onApprove,
+  onUpdate,
+}: {
+  items: PrePublishQueueItem[];
+  approvingJobId: string | null;
+  onApprove: (jobId: string) => void;
+  onUpdate: () => void;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <table className="w-full text-left text-sm text-zinc-600">
+        <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500 whitespace-nowrap">
+          <tr>
+            <th className="px-4 py-3 font-medium">Job ID</th>
+            <th className="px-4 py-3 font-medium">Title</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium">Created</th>
+            <th className="px-4 py-3 font-medium">Platforms</th>
+            <th className="px-4 py-3 font-medium text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-200">
+          {items.map((item) => (
+            <Fragment key={item.job_id}>
+              <tr className="hover:bg-zinc-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-zinc-950 uppercase whitespace-nowrap">{item.job_id}</td>
+                <td className="px-4 py-3 w-full max-w-[200px] sm:max-w-[300px] truncate" title={item.title}>{item.title}</td>
+                <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={item.status} /></td>
+                <td className="px-4 py-3 whitespace-nowrap">{formatDate(item.created_at)}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex gap-1">
+                    {item.platforms.map((p) => (
+                      <PlatformMark key={p.platform} platform={p.platform} small />
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">
+                  <button
+                    onClick={() => setExpandedId(expandedId === item.job_id ? null : item.job_id)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                  >
+                    {expandedId === item.job_id ? "Close" : "Review"}
+                  </button>
+                </td>
+              </tr>
+              {expandedId === item.job_id && (
+                <tr>
+                  <td colSpan={6} className="bg-zinc-50/50 p-4 sm:p-6 border-t border-zinc-100">
+                    <PendingClipCard
+                      item={item}
+                      approving={approvingJobId === item.job_id}
+                      onApprove={onApprove}
+                      onUpdate={onUpdate}
+                    />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HistoryTable({ items }: { items: PrePublishQueueItem[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <table className="w-full text-left text-sm text-zinc-600">
+        <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase text-zinc-500 whitespace-nowrap">
+          <tr>
+            <th className="px-4 py-3 font-medium">Job ID</th>
+            <th className="px-4 py-3 font-medium">Title</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium">Updated</th>
+            <th className="px-4 py-3 font-medium">Platforms</th>
+            <th className="px-4 py-3 font-medium text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-200">
+          {items.map((item) => (
+            <Fragment key={item.job_id}>
+              <tr className="hover:bg-zinc-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-zinc-950 uppercase whitespace-nowrap">{item.job_id}</td>
+                <td className="px-4 py-3 w-full max-w-[200px] sm:max-w-[300px] truncate" title={item.title}>{item.title}</td>
+                <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={item.status} /></td>
+                <td className="px-4 py-3 whitespace-nowrap">{formatDate(item.updated_at)}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex gap-1">
+                    {item.platforms.map((p) => (
+                      <PlatformMark key={p.platform} platform={p.platform} small />
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">
+                  <button
+                    onClick={() => setExpandedId(expandedId === item.job_id ? null : item.job_id)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+                  >
+                    {expandedId === item.job_id ? "Close" : "Details"}
+                  </button>
+                </td>
+              </tr>
+              {expandedId === item.job_id && (
+                <tr>
+                  <td colSpan={6} className="bg-zinc-50/50 p-4 sm:p-6 border-t border-zinc-100">
+                    <HistoryClipCard item={item} />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function Dashboard() {
-  const [history, setHistory] = useState<PublishHistoryItem[]>([]);
-  const [historySource, setHistorySource] = useState("memory");
-  const [config, setConfig] = useState<ConfigStatus | null>(null);
+  const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+  const [items, setItems] = useState<PrePublishQueueItem[]>([]);
+  const [historyItems, setHistoryItems] = useState<PrePublishQueueItem[]>([]);
+  const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [approvingJobId, setApprovingJobId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function loadPending() {
+    try {
+      const response = await fetch("/api/pre-publish/pending", {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as PendingResponse;
+
+      setConfigured(data.configured);
+      setItems(data.items ?? []);
+      setError(data.error ?? null);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to load queue"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadHistory() {
+    try {
+      const response = await fetch("/api/pre-publish/history", {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      setHistoryItems(data.items ?? []);
+    } catch (loadError) {
+      console.error("Failed to load history", loadError);
+    }
+  }
 
   useEffect(() => {
     let active = true;
 
-    async function loadDashboard() {
-      try {
-        const [historyResponse, configResponse] = await Promise.all([
-          fetch("/api/history", { cache: "no-store" }),
-          fetch("/api/config-check", { cache: "no-store" }),
-        ]);
-        const historyData = (await historyResponse.json()) as {
-          source?: string;
-          history?: PublishHistoryItem[];
-        };
-        const configData = (await configResponse.json()) as ConfigStatus;
-
-        if (active) {
-          setHistory(historyData.history ?? []);
-          setHistorySource(historyData.source ?? "memory");
-          setConfig(configData);
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
+    async function refresh() {
+      if (!active) {
+        return;
       }
+
+      await Promise.all([loadPending(), loadHistory()]);
     }
 
-    loadDashboard();
-    const interval = window.setInterval(loadDashboard, 10000);
+    refresh();
+    const interval = window.setInterval(refresh, 10000);
 
     return () => {
       active = false;
@@ -153,25 +653,37 @@ export function Dashboard() {
     };
   }, []);
 
-  const totalResults = useMemo(
-    () => history.reduce((count, job) => count + job.results.length, 0),
-    [history]
-  );
-  const failedResults = useMemo(
-    () =>
-      history.reduce(
-        (count, job) =>
-          count + job.results.filter((result) => result.status === "failed").length,
-        0
-      ),
-    [history]
-  );
-  const youtubeReady = Boolean(
-    config?.youtube_client_id_configured &&
-      config.youtube_client_secret_configured &&
-      config.youtube_redirect_uri_configured &&
-      config.youtube_refresh_token_configured
-  );
+  async function approve(jobId: string) {
+    setApprovingJobId(jobId);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/pre-publish/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ job_id: jobId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Publish failed");
+      }
+
+      setMessage(`Published ${jobId}`);
+      await loadPending();
+    } catch (approveError) {
+      setError(
+        approveError instanceof Error
+          ? approveError.message
+          : "Publish failed"
+      );
+    } finally {
+      setApprovingJobId(null);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#f6f7f9] text-zinc-950">
@@ -180,180 +692,113 @@ export function Dashboard() {
           <div>
             <p className="text-sm font-medium text-zinc-500">Publisher API</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-normal text-zinc-950 sm:text-3xl">
-              Clip Publishing Dashboard
+              {activeTab === "pending" ? "Clips Waiting For Approval" : "Publish History"}
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <a
               className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-              href="/terms"
-            >
-              Terms
-            </a>
-            <a
-              className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-              href="/privacy"
-            >
-              Privacy
-            </a>
-            <a
-              className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
               href="/docs"
             >
-              Open Swagger
+              Swagger
             </a>
             <a
               className="rounded border border-zinc-900 bg-zinc-950 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
               href="/api/config-check"
             >
-              Config Check
+              Config
             </a>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
-        <section className="grid gap-4 md:grid-cols-4">
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">Recent jobs</p>
-            <p className="mt-2 text-3xl font-semibold">{history.length}</p>
+        {message ? (
+          <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+            {message}
           </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">Platform actions</p>
-            <p className="mt-2 text-3xl font-semibold">{totalResults}</p>
+        ) : null}
+
+        {error ? (
+          <div className="mb-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
+            {error}
           </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">Failed actions</p>
-            <p className="mt-2 text-3xl font-semibold">{failedResults}</p>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-4">
-            <p className="text-sm text-zinc-500">YouTube OAuth</p>
-            <p className="mt-3">
-              <StatusBadge status={youtubeReady ? "processed" : "failed"} />
+        ) : null}
+
+        {!configured ? (
+          <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
+            <h2 className="text-lg font-semibold text-zinc-950">
+              Pre-publish queue is not configured
+            </h2>
+            <p className="mt-2 text-sm text-zinc-500">
+              Add the Google Sheets environment variables and use a
+              PrePublishQueue tab in the same spreadsheet.
             </p>
-          </div>
-        </section>
-
-        <section className="mt-6 grid gap-4 lg:grid-cols-3">
-          {platforms.map((platform) => {
-            const total = countPlatformJobs(history, platform.id);
-            const failures = countPlatformFailures(history, platform.id);
-
-            return (
-              <div
-                className="rounded-lg border border-zinc-200 bg-white p-4"
-                key={platform.id}
+          </section>
+        ) : loading ? (
+          <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center text-sm font-medium text-zinc-500">
+            Loading clips...
+          </section>
+        ) : (
+          <>
+            <div className="mb-6 flex gap-6 border-b border-zinc-200">
+              <button
+                className={`border-b-2 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "pending"
+                    ? "border-zinc-950 text-zinc-950"
+                    : "border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300"
+                }`}
+                onClick={() => setActiveTab("pending")}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <PlatformMark platform={platform.id} />
-                    <div>
-                      <h2 className="text-base font-semibold">
-                        {platform.label}
-                      </h2>
-                      <div className={`mt-1 h-1 w-10 rounded ${platform.accent}`} />
-                    </div>
-                  </div>
-                  <StatusBadge
-                    status={failures > 0 ? "failed" : total > 0 ? "processed" : "not_implemented_yet"}
-                  />
-                </div>
-                <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <dt className="text-zinc-500">Actions</dt>
-                    <dd className="mt-1 text-xl font-semibold">{total}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-zinc-500">Failures</dt>
-                    <dd className="mt-1 text-xl font-semibold">{failures}</dd>
-                  </div>
-                </dl>
-              </div>
-            );
-          })}
-        </section>
-
-        <section className="mt-6 rounded-lg border border-zinc-200 bg-white">
-          <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
-            <h2 className="text-base font-semibold">Clip History</h2>
-            <span className="text-sm text-zinc-500">
-              {loading
-                ? "Loading"
-                : `Source: ${historySource.replaceAll("_", " ")}. Refreshes every 10 seconds`}
-            </span>
-          </div>
-
-          {history.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <p className="text-base font-medium text-zinc-900">
-                No publish jobs recorded yet.
-              </p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Send a request to /api/publish and the latest results will appear here.
-              </p>
+                Pending Approval ({items.length})
+              </button>
+              <button
+                className={`border-b-2 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "history"
+                    ? "border-zinc-950 text-zinc-950"
+                    : "border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300"
+                }`}
+                onClick={() => setActiveTab("history")}
+              >
+                Publish History ({historyItems.length})
+              </button>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-zinc-200 text-sm">
-                <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-normal text-zinc-500">
-                  <tr>
-                    <th className="px-4 py-3">Clip</th>
-                    <th className="px-4 py-3">Created</th>
-                    <th className="px-4 py-3">Duration</th>
-                    <th className="px-4 py-3">Platforms</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {history.map((job) => (
-                    <tr key={`${job.job_id}-${job.created_at}`}>
-                      <td className="max-w-sm px-4 py-4 align-top">
-                        <p className="font-medium text-zinc-950">{job.title}</p>
-                        <p className="mt-1 text-xs text-zinc-500">{job.job_id}</p>
-                      </td>
-                      <td className="px-4 py-4 align-top text-zinc-600">
-                        {formatDate(job.created_at)}
-                      </td>
-                      <td className="px-4 py-4 align-top text-zinc-600">
-                        {job.duration_sec ? `${job.duration_sec}s` : "Unknown"}
-                      </td>
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex flex-col gap-2">
-                          {job.results.map((result, index) => (
-                            <div
-                              className="flex flex-wrap items-center gap-2"
-                              key={`${result.platform}-${index}`}
-                            >
-                              <PlatformMark platform={result.platform} />
-                              <span className="min-w-32 font-medium capitalize text-zinc-800">
-                                {result.platform.replaceAll("_", " ")}
-                              </span>
-                              <StatusBadge status={result.status} />
-                              {result.youtube_url ? (
-                                <a
-                                  className="text-xs font-medium text-sky-700 hover:text-sky-900"
-                                  href={result.youtube_url}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  View video
-                                </a>
-                              ) : null}
-                              {result.error ? (
-                                <span className="text-xs text-rose-700">
-                                  {result.error}
-                                </span>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+
+            {activeTab === "pending" ? (
+              items.length === 0 ? (
+                <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
+                  <h2 className="text-lg font-semibold text-zinc-950">
+                    No clips are waiting for approval
+                  </h2>
+                  <p className="mt-2 text-sm text-zinc-500">
+                    New items will appear here after /api/pre-publish finds the final
+                    Drive video.
+                  </p>
+                </section>
+              ) : (
+                <PendingTable
+                  items={items}
+                  approvingJobId={approvingJobId}
+                  onApprove={approve}
+                  onUpdate={loadPending}
+                />
+              )
+            ) : (
+              historyItems.length === 0 ? (
+                <section className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center">
+                  <h2 className="text-lg font-semibold text-zinc-950">
+                    No history items yet
+                  </h2>
+                  <p className="mt-2 text-sm text-zinc-500">
+                    Approved or failed clips will appear here.
+                  </p>
+                </section>
+              ) : (
+                <HistoryTable items={historyItems} />
+              )
+            )}
+          </>
+        )}
       </div>
     </main>
   );

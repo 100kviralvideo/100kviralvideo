@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import {
+  isPrePublishQueueConfigured,
+} from "@/lib/prepublish-queue";
+import {
   isGoogleDriveConfigured,
   isGoogleDriveOAuthConfigured,
   isGoogleDriveServiceAccountConfigured,
@@ -48,6 +51,9 @@ export async function GET() {
     ),
     google_sheets_history_sheet:
       process.env.GOOGLE_SHEETS_HISTORY_SHEET?.trim() || "History",
+    prepublish_queue_sheet:
+      process.env.PREPUBLISH_QUEUE_SHEET?.trim() || "PrePublishQueue",
+    prepublish_queue_configured: isPrePublishQueueConfigured(),
     google_drive_client_id_configured: Boolean(
       process.env.GOOGLE_DRIVE_CLIENT_ID?.trim()
     ),

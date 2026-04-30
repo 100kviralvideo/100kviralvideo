@@ -97,6 +97,172 @@ export async function GET() {
           },
         },
       },
+      "/api/pre-publish": {
+        post: {
+          summary: "Prepare a Drive video for human approval",
+          operationId: "preparePrePublishClip",
+          description:
+            "Finds a named Google Drive video, converts it to a final_video_url, and stores a pending approval item in the Google Sheets pre-publish queue.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/PrePublishPayload",
+                },
+                examples: {
+                  prepareClip: {
+                    summary: "Prepare clip for approval",
+                    value: {
+                      job_id: "youtube_test_001",
+                      folder_id: "1abcDriveFolderId",
+                      video_filename: "youtube_test_001_final.mp4",
+                      title: "Why This Movie Ending Works",
+                      caption:
+                        "This ending looks confusing, but it actually has one clear purpose.",
+                      description: "AI-generated movie commentary.",
+                      hashtags: ["movies", "film", "shorts"],
+                      duration_sec: 60,
+                      ai_generated: true,
+                      platforms: [
+                        {
+                          platform: "youtube_shorts",
+                          privacy: "private",
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Pending approval item created",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PrePublishResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid pre-publish request",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "401": {
+              description: "Missing or invalid bearer token",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "404": {
+              description: "No matching Drive video found",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/pre-publish/pending": {
+        get: {
+          summary: "List clips waiting for approval",
+          operationId: "listPendingPrePublishClips",
+          description:
+            "Returns pending pre-publish queue items for the dashboard approval inbox.",
+          responses: {
+            "200": {
+              description: "Pending approval items",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PendingPrePublishResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/pre-publish/approve": {
+        post: {
+          summary: "Approve and publish a pending clip",
+          operationId: "approvePrePublishClip",
+          description:
+            "Loads a pending queue item by job_id, marks it approved, publishes with the existing publisher logic, and updates the queue row.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["job_id"],
+                  properties: {
+                    job_id: {
+                      type: "string",
+                      example: "youtube_test_001",
+                    },
+                  },
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Clip approved and publish job processed",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean", example: true },
+                      job_id: { type: "string" },
+                      status: { type: "string", example: "published" },
+                      publish: { $ref: "#/components/schemas/PublishResponse" },
+                    },
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid approval request",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "404": {
+              description: "Pending queue item not found",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "409": {
+              description: "Queue item is not pending approval",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/publish": {
         post: {
           summary: "Submit a video publish job",
@@ -383,6 +549,108 @@ export async function GET() {
               type: ["string", "null"],
               example: "Multiple files found; newest file selected.",
             },
+          },
+        },
+        PrePublishPayload: {
+          type: "object",
+          required: [
+            "job_id",
+            "folder_id",
+            "video_filename",
+            "title",
+            "caption",
+            "platforms",
+          ],
+          properties: {
+            job_id: { type: "string" },
+            folder_id: {
+              type: "string",
+              description: "Google Drive folder ID to search inside.",
+            },
+            video_filename: {
+              type: "string",
+              example: "clip_xxx_final.mp4",
+            },
+            title: { type: "string" },
+            caption: { type: "string" },
+            description: { type: "string" },
+            hashtags: {
+              type: "array",
+              items: { type: "string" },
+            },
+            duration_sec: { type: "number" },
+            ai_generated: { type: "boolean", default: true },
+            platforms: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PlatformTarget" },
+              minItems: 1,
+            },
+          },
+          additionalProperties: false,
+        },
+        PrePublishQueueItem: {
+          type: "object",
+          properties: {
+            created_at: { type: "string", format: "date-time" },
+            updated_at: { type: "string", format: "date-time" },
+            job_id: { type: "string" },
+            status: {
+              type: "string",
+              enum: ["pending", "publishing", "published", "failed"],
+            },
+            folder_id: { type: "string" },
+            video_filename: { type: "string" },
+            final_video_url: { type: "string", format: "uri" },
+            drive_file: { $ref: "#/components/schemas/FindDriveVideoResponse" },
+            title: { type: "string" },
+            caption: { type: "string" },
+            description: { type: "string" },
+            hashtags: {
+              type: "array",
+              items: { type: "string" },
+            },
+            duration_sec: { type: "number" },
+            ai_generated: { type: "boolean" },
+            platforms: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PlatformTarget" },
+            },
+            publish_result: {
+              type: "object",
+              additionalProperties: true,
+            },
+            error: { type: "string" },
+          },
+        },
+        PrePublishResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: true },
+            status: { type: "string", example: "pending" },
+            preview: {
+              allOf: [
+                { $ref: "#/components/schemas/PrePublishQueueItem" },
+                {
+                  type: "object",
+                  properties: {
+                    publish_payload: {
+                      $ref: "#/components/schemas/PublishPayload",
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+        PendingPrePublishResponse: {
+          type: "object",
+          properties: {
+            configured: { type: "boolean" },
+            items: {
+              type: "array",
+              items: { $ref: "#/components/schemas/PrePublishQueueItem" },
+            },
+            error: { type: "string" },
           },
         },
         PlatformTarget: {

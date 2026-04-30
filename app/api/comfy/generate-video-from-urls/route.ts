@@ -1,6 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { validatePublisherAuth } from "@/lib/api-auth";
-import { createComfyJob } from "@/lib/comfy/jobs";
+import { createComfyJob, updateComfyJob } from "@/lib/comfy/jobs";
 import {
   createImagePaths,
   downloadImage,
@@ -8,9 +8,10 @@ import {
   waitForQueuedComfyVideoJob,
   type ComfyGenerationOptions,
 } from "@/lib/comfy/processor";
+import { scheduleComfyCompletionCheck } from "@/lib/comfy/scheduler";
 
 export const runtime = "nodejs";
-export const maxDuration = 800;
+export const maxDuration = 60;
 
 type UrlGenerationRequest = ComfyGenerationOptions & {
   title?: unknown;
@@ -215,13 +216,32 @@ export async function POST(req: NextRequest) {
     });
 
     if (job.prompt_id) {
-      after(() =>
-        waitForQueuedComfyVideoJob({
-          jobId,
-          promptId: job.prompt_id!,
-          clientId: job.comfy_client_id,
-        })
-      );
+      after(async () => {
+        const scheduled = await scheduleComfyCompletionCheck({
+          job_id: jobId,
+          prompt_id: job.prompt_id!,
+          comfy_client_id: job.comfy_client_id,
+          title,
+          attempt: 1,
+        });
+
+        if (!scheduled && process.env.VERCEL) {
+          await updateComfyJob(jobId, {
+            status: "failed",
+            error:
+              "QStash scheduler is not configured. Set QSTASH_TOKEN, COMFY_WORKER_SECRET, and APP_BASE_URL on Vercel for long Comfy jobs.",
+          });
+          return;
+        }
+
+        if (!scheduled) {
+          await waitForQueuedComfyVideoJob({
+            jobId,
+            promptId: job.prompt_id!,
+            clientId: job.comfy_client_id,
+          });
+        }
+      });
     }
 
     return NextResponse.json({

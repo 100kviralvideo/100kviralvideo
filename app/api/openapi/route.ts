@@ -23,6 +23,132 @@ export async function GET() {
       },
     ],
     paths: {
+      "/api/drive/auth": {
+        get: {
+          summary: "Initiate Google Drive OAuth flow",
+          operationId: "driveAuth",
+          description: "Redirects the user to the Google OAuth2 consent screen to authorize Drive access.",
+          responses: {
+            "302": {
+              description: "Redirect to Google OAuth consent screen",
+            },
+          },
+        },
+      },
+      "/api/drive/callback": {
+        get: {
+          summary: "Google Drive OAuth callback",
+          operationId: "driveCallback",
+          description: "Handles the callback from Google OAuth, exchanges the authorization code for tokens.",
+          parameters: [
+            {
+              name: "code",
+              in: "query",
+              required: true,
+              schema: {
+                type: "string",
+              },
+              description: "The authorization code returned from Google.",
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Tokens retrieved successfully",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/DriveCallbackResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Missing or invalid authorization code",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/drive/upload-from-url": {
+        post: {
+          summary: "Upload a video to Google Drive from a URL",
+          operationId: "uploadDriveVideoFromUrl",
+          description: "Downloads a video from a given URL and uploads it directly to a Google Drive folder.",
+          security: [
+            {
+              bearerAuth: [],
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UploadFromUrlPayload",
+                },
+                examples: {
+                  uploadVideo: {
+                    summary: "Upload video from external URL",
+                    value: {
+                      source_video_url: "https://example.com/generated_video.mp4",
+                      video_filename: "viral_clip_001.mp4",
+                      folder_id: "1abcDriveFolderId",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Video uploaded successfully",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/UploadFromUrlResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid request payload",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+            "401": {
+              description: "Unauthorized",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+            "500": {
+              description: "Upload failed",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/drive/find-video": {
         post: {
           summary: "Find a generated video in Google Drive",
@@ -189,6 +315,71 @@ export async function GET() {
         },
       },
       schemas: {
+        DriveCallbackResponse: {
+          type: "object",
+          properties: {
+            message: {
+              type: "string",
+            },
+            refresh_token: {
+              type: "string",
+            },
+            access_token_exists: {
+              type: "boolean",
+            },
+            expiry_date: {
+              type: "number",
+            },
+          },
+        },
+        UploadFromUrlPayload: {
+          type: "object",
+          required: ["source_video_url", "video_filename"],
+          properties: {
+            source_video_url: {
+              type: "string",
+              format: "uri",
+            },
+            video_filename: {
+              type: "string",
+            },
+            folder_id: {
+              type: "string",
+            },
+          },
+        },
+        UploadFromUrlResponse: {
+          type: "object",
+          properties: {
+            success: {
+              type: "boolean",
+            },
+            file_id: {
+              type: "string",
+            },
+            name: {
+              type: "string",
+            },
+            mime_type: {
+              type: "string",
+            },
+            size: {
+              type: "string",
+            },
+            web_view_link: {
+              type: "string",
+              format: "uri",
+            },
+            web_content_link: {
+              type: "string",
+              format: "uri",
+            },
+            final_video_url: {
+              type: "string",
+              format: "uri",
+            },
+          },
+        },
         FindDriveVideoPayload: {
           type: "object",
           required: ["folder_id", "video_filename"],

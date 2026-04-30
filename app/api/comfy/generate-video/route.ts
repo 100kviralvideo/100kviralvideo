@@ -76,6 +76,26 @@ function getPrompt(form: FormData, names: string[]) {
   return null;
 }
 
+function getOptionalText(form: FormData, names: string[]) {
+  return getPrompt(form, names) || undefined;
+}
+
+function getOptionalUrl(form: FormData, names: string[]) {
+  const value = getOptionalText(form, names);
+
+  if (!value) {
+    return undefined;
+  }
+
+  const url = new URL(value);
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${names[0]} must be an http or https URL`);
+  }
+
+  return url.toString();
+}
+
 function getSegmentPrompts(form: FormData) {
   const rawSegmentPrompts = form.get("segment_prompts");
 
@@ -148,10 +168,19 @@ export async function POST(req: NextRequest) {
       segment_lengths: parseSegmentLengths(form),
       image_strength: parseOptionalNumber(form, "image_strength"),
     };
+    const title = getOptionalText(form, ["title", "video_title"]);
+    const notifyUrl = getOptionalUrl(form, [
+      "notify_url",
+      "webhook_url",
+      "callback_url",
+    ]);
     const jobId = crypto.randomUUID();
     const paths = await createImagePaths(jobId);
 
-    await createComfyJob(jobId);
+    await createComfyJob(jobId, {
+      title,
+      notify_url: notifyUrl,
+    });
     await Promise.all(
       imageFiles.map((imageFile, index) =>
         saveUploadedImage(imageFile, paths[index])
@@ -175,6 +204,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       job_id: jobId,
+      title: title || null,
+      notify_url: notifyUrl || null,
       prompt_id: job.prompt_id,
       status: job.status,
     });

@@ -1,7 +1,11 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { ComfyClient, findOutputFile } from "@/lib/comfy/client";
-import { updateComfyJob, type ComfyJobRecord } from "@/lib/comfy/jobs";
+import {
+  getComfyJob,
+  updateComfyJob,
+  type ComfyJobRecord,
+} from "@/lib/comfy/jobs";
 import {
   getComfySettings,
   getComfyStorageSettings,
@@ -85,6 +89,96 @@ function assertDriveUploadConfigReady(settings: ReturnType<typeof getComfySettin
     throw new Error(
       "Google Drive credentials are required when UPLOAD_TO_DRIVE=true. Set GOOGLE_DRIVE_CLIENT_EMAIL and GOOGLE_DRIVE_PRIVATE_KEY, or configure Google Drive OAuth."
     );
+  }
+}
+
+function sanitizeDriveFileName(value: string) {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function buildDriveVideoFileName({
+  title,
+  jobId,
+  ext,
+}: {
+  title?: string;
+  jobId: string;
+  ext: string;
+}) {
+  const safeTitle = title ? sanitizeDriveFileName(title) : "";
+  return `${safeTitle || jobId}${ext}`;
+}
+
+function normalizeNotifyUrl(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return undefined;
+    }
+
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+async function notifyVideoUploaded({
+  job,
+  driveLink,
+  finalVideoUrl,
+  fileName,
+}: {
+  job: ComfyJobRecord;
+  driveLink: string;
+  finalVideoUrl: string;
+  fileName: string;
+}) {
+  const notifyUrl = normalizeNotifyUrl(job.notify_url);
+
+  if (!notifyUrl) {
+    return;
+  }
+
+  try {
+    const response = await fetch(notifyUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        event: "comfy_video_uploaded",
+        status: "done",
+        job_id: job.job_id,
+        title: job.title || null,
+        file_name: fileName,
+        drive_link: driveLink,
+        final_video_url: finalVideoUrl,
+        local_output_path: job.local_output_path || null,
+        uploaded_at: new Date().toISOString(),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Webhook failed: ${response.status} ${response.statusText}`);
+    }
+
+    await updateComfyJob(job.job_id, {
+      notification_sent_at: new Date().toISOString(),
+      notification_error: undefined,
+    });
+  } catch (error) {
+    await updateComfyJob(job.job_id, {
+      notification_error:
+        error instanceof Error ? error.message : "Unknown webhook error",
+    });
   }
 }
 
@@ -192,6 +286,7 @@ export async function waitForQueuedComfyVideoJob({
 async function finalizeComfyVideoJob(jobId: string, historyItem: Parameters<typeof findOutputFile>[0]) {
   const settings = getComfySettings();
   const comfy = new ComfyClient(settings.comfyUrl);
+  const currentJob = await getComfyJob(jobId);
 
   await updateComfyJob(jobId, { status: "downloading_output" });
   const outputInfo = findOutputFile(historyItem, settings.outputNodeId);
@@ -218,19 +313,33 @@ async function finalizeComfyVideoJob(jobId: string, historyItem: Parameters<type
   }
 
   await updateComfyJob(jobId, { status: "uploading_to_drive" });
+  const driveFileName = buildDriveVideoFileName({
+    title: currentJob?.title,
+    jobId,
+    ext,
+  });
   const upload = await uploadVideoToDrive({
     filePath: localOutputPath,
     folderId: settings.googleDriveFolderId,
-    fileName: `${jobId}${ext}`,
+    fileName: driveFileName,
     makePublic: settings.googleDrivePublic,
   });
 
-  return updateComfyJob(jobId, {
+  const updatedJob = await updateComfyJob(jobId, {
     status: "done",
     drive_link: upload.drive_link,
     final_video_url: upload.final_video_url,
     local_output_path: localOutputPath,
   });
+
+  await notifyVideoUploaded({
+    job: updatedJob,
+    driveLink: upload.drive_link,
+    finalVideoUrl: upload.final_video_url,
+    fileName: driveFileName,
+  });
+
+  return getComfyJob(jobId);
 }
 
 export async function refreshComfyVideoJob(job: ComfyJobRecord) {

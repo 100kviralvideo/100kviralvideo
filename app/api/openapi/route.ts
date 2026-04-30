@@ -539,6 +539,18 @@ export async function GET() {
                 "segment_4_image",
               ],
               properties: {
+                title: {
+                  type: "string",
+                  description:
+                    "Used as the Google Drive video filename after generation.",
+                  example: "My YouTube Short Title",
+                },
+                notify_url: {
+                  type: "string",
+                  format: "uri",
+                  description:
+                    "Optional webhook URL. The API POSTs here after the video is uploaded to Google Drive.",
+                },
                 global_prompt: { type: "string" },
                 segment_1_prompt: { type: "string" },
                 segment_2_prompt: { type: "string" },
@@ -570,6 +582,18 @@ export async function GET() {
                 "segment_4_image_url",
               ],
               properties: {
+                title: {
+                  type: "string",
+                  description:
+                    "Used as the Google Drive video filename after generation.",
+                  example: "My YouTube Short Title",
+                },
+                notify_url: {
+                  type: "string",
+                  format: "uri",
+                  description:
+                    "Optional webhook URL. The API POSTs here after the video is uploaded to Google Drive.",
+                },
                 global_prompt: { type: "string" },
                 segment_prompts: {
                   type: "array",
@@ -590,6 +614,8 @@ export async function GET() {
           required: ["job_id", "prompt_id", "status"],
           properties: {
             job_id: { type: "string" },
+            title: { type: ["string", "null"] },
+            notify_url: { type: ["string", "null"], format: "uri" },
             prompt_id: { type: "string" },
             status: { type: "string", example: "processing" },
           },
@@ -599,6 +625,8 @@ export async function GET() {
           required: ["job_id", "status", "created_at", "updated_at"],
           properties: {
             job_id: { type: "string" },
+            title: { type: "string" },
+            notify_url: { type: "string", format: "uri" },
             status: {
               type: "string",
               enum: [
@@ -618,6 +646,8 @@ export async function GET() {
             drive_link: { type: "string", format: "uri" },
             final_video_url: { type: "string", format: "uri" },
             local_output_path: { type: "string" },
+            notification_sent_at: { type: "string", format: "date-time" },
+            notification_error: { type: "string" },
             error: { type: "string" },
             created_at: { type: "string", format: "date-time" },
             updated_at: { type: "string", format: "date-time" },

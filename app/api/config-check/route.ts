@@ -49,6 +49,9 @@ export async function GET() {
     google_drive_private_key_configured: Boolean(
       process.env.GOOGLE_DRIVE_PRIVATE_KEY?.trim()
     ),
+    google_drive_folder_id_configured: Boolean(
+      process.env.GOOGLE_DRIVE_FOLDER_ID?.trim()
+    ),
     review_queue_configured: Boolean(process.env.REVIEW_QUEUE_JSON?.trim()),
   });
 }

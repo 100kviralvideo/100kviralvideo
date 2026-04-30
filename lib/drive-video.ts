@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { Readable } from "node:stream";
 
 export type DriveVideoResult = {
   success: true;
@@ -36,6 +37,66 @@ function createDriveClient() {
   });
 
   return google.drive({ version: "v3", auth });
+}
+
+async function setAnyoneReaderPermission({
+  drive,
+  fileId,
+}: {
+  drive: ReturnType<typeof createDriveClient>;
+  fileId: string;
+}) {
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: {
+        type: "anyone",
+        role: "reader",
+      },
+      supportsAllDrives: true,
+    });
+  } catch (permissionError) {
+    const message =
+      permissionError instanceof Error ? permissionError.message : "";
+
+    if (!message.toLowerCase().includes("permission already exists")) {
+      throw permissionError;
+    }
+  }
+}
+
+async function getDriveVideoResult({
+  drive,
+  fileId,
+  fallbackName,
+  warning,
+}: {
+  drive: ReturnType<typeof createDriveClient>;
+  fileId: string;
+  fallbackName: string;
+  warning: string | null;
+}) {
+  const refreshedFileResponse = await drive.files.get({
+    fileId,
+    fields: "id,name,mimeType,size,createdTime,webViewLink,webContentLink",
+    supportsAllDrives: true,
+  });
+  const file = refreshedFileResponse.data;
+
+  return {
+    success: true,
+    file_id: file.id ?? fileId,
+    name: file.name ?? fallbackName,
+    mime_type: file.mimeType,
+    size: file.size,
+    created_time: file.createdTime,
+    web_view_link: file.webViewLink,
+    web_content_link: file.webContentLink,
+    final_video_url: `https://drive.google.com/uc?export=download&id=${
+      file.id ?? fileId
+    }`,
+    warning,
+  } satisfies DriveVideoResult;
 }
 
 function escapeDriveQueryValue(value: string) {
@@ -87,44 +148,53 @@ export async function findDriveVideo({
     throw new Error("Google Drive returned a file without an id");
   }
 
-  try {
-    await drive.permissions.create({
-      fileId: selectedFile.id,
-      requestBody: {
-        type: "anyone",
-        role: "reader",
-      },
-      supportsAllDrives: true,
-    });
-  } catch (permissionError) {
-    const message =
-      permissionError instanceof Error ? permissionError.message : "";
+  await setAnyoneReaderPermission({ drive, fileId: selectedFile.id });
 
-    if (!message.toLowerCase().includes("permission already exists")) {
-      throw permissionError;
-    }
-  }
-
-  const refreshedFileResponse = await drive.files.get({
+  return getDriveVideoResult({
+    drive,
     fileId: selectedFile.id,
-    fields: "id,name,mimeType,size,createdTime,webViewLink,webContentLink",
-    supportsAllDrives: true,
-  });
-  const file = refreshedFileResponse.data;
-
-  return {
-    success: true,
-    file_id: file.id ?? selectedFile.id,
-    name: file.name ?? selectedFile.name ?? videoFilename,
-    mime_type: file.mimeType,
-    size: file.size,
-    created_time: file.createdTime,
-    web_view_link: file.webViewLink,
-    web_content_link: file.webContentLink,
-    final_video_url: `https://drive.google.com/uc?export=download&id=${
-      file.id ?? selectedFile.id
-    }`,
+    fallbackName: selectedFile.name ?? videoFilename,
     warning:
       files.length > 1 ? "Multiple files found; newest file selected." : null,
-  };
+  });
+}
+
+export async function uploadVideoToDrive({
+  filename,
+  mimeType,
+  buffer,
+}: {
+  filename: string;
+  mimeType: string;
+  buffer: Buffer;
+}) {
+  const folderId = getRequiredEnv("GOOGLE_DRIVE_FOLDER_ID");
+  const drive = createDriveClient();
+  const uploadResponse = await drive.files.create({
+    requestBody: {
+      name: filename,
+      parents: [folderId],
+      mimeType,
+    },
+    media: {
+      mimeType,
+      body: Readable.from(buffer),
+    },
+    fields: "id",
+    supportsAllDrives: true,
+  });
+  const fileId = uploadResponse.data.id;
+
+  if (!fileId) {
+    throw new Error("Google Drive upload did not return a file id");
+  }
+
+  await setAnyoneReaderPermission({ drive, fileId });
+
+  return getDriveVideoResult({
+    drive,
+    fileId,
+    fallbackName: filename,
+    warning: null,
+  });
 }

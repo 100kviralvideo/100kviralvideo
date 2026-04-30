@@ -97,6 +97,307 @@ export async function GET() {
           },
         },
       },
+      "/api/drive/test-upload": {
+        post: {
+          summary: "Upload a test video to Google Drive",
+          operationId: "testUploadDriveVideo",
+          description:
+            "Uploads a video file to GOOGLE_DRIVE_FOLDER_ID, makes it publicly readable, and returns a final_video_url for testing the approval workflow.",
+          security: [
+            {
+              bearerAuth: [],
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  $ref: "#/components/schemas/TestUploadDriveVideoPayload",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Video uploaded to Google Drive",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/FindDriveVideoResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid upload request",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+            "401": {
+              description: "Missing or invalid bearer token",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/config-check": {
+        get: {
+          summary: "Check server configuration",
+          operationId: "configCheck",
+          responses: {
+            "200": {
+              description: "Environment variable presence report",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    additionalProperties: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/openapi": {
+        get: {
+          summary: "Get OpenAPI document",
+          operationId: "getOpenApiDocument",
+          responses: {
+            "200": {
+              description: "OpenAPI JSON document used by Swagger UI",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    additionalProperties: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/history": {
+        get: {
+          summary: "List publish history",
+          operationId: "listPublishHistory",
+          responses: {
+            "200": {
+              description: "Publish history",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      source: {
+                        type: "string",
+                        example: "google_sheets",
+                      },
+                      history: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          additionalProperties: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/review/pending": {
+        get: {
+          summary: "List clips waiting for approval",
+          operationId: "listPendingReviewClips",
+          description:
+            "Loads REVIEW_QUEUE_JSON, resolves completed Drive videos, and returns only clips ready for human review.",
+          responses: {
+            "200": {
+              description: "Ready clips for dashboard approval",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PendingReviewResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/review/approve": {
+        post: {
+          summary: "Approve and publish a review clip",
+          operationId: "approveReviewClip",
+          description:
+            "Approves a configured review queue item and calls /api/publish server-side with human_approved and rights_cleared set to true.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ApproveReviewPayload",
+                },
+                examples: {
+                  approveClip: {
+                    value: {
+                      id: "clip_001",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Publish processed",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/PublishResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid approval request",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+            "404": {
+              description: "Review queue item not found",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/youtube/auth": {
+        get: {
+          summary: "Start YouTube OAuth",
+          operationId: "startYouTubeAuth",
+          responses: {
+            "307": {
+              description: "Redirects to Google OAuth consent",
+            },
+            "500": {
+              description: "Missing or invalid YouTube OAuth configuration",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/youtube/callback": {
+        get: {
+          summary: "Handle YouTube OAuth callback",
+          operationId: "youtubeOAuthCallback",
+          parameters: [
+            {
+              name: "code",
+              in: "query",
+              required: true,
+              schema: {
+                type: "string",
+              },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "OAuth token exchange result",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    additionalProperties: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/tiktok/auth": {
+        get: {
+          summary: "Start TikTok OAuth",
+          operationId: "startTikTokAuth",
+          responses: {
+            "307": {
+              description: "Redirects to TikTok OAuth consent",
+            },
+            "500": {
+              description: "Missing or invalid TikTok OAuth configuration",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/ErrorResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/tiktok/callback": {
+        get: {
+          summary: "Handle TikTok OAuth callback",
+          operationId: "tiktokOAuthCallback",
+          parameters: [
+            {
+              name: "code",
+              in: "query",
+              required: true,
+              schema: {
+                type: "string",
+              },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "OAuth token exchange result",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    additionalProperties: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/publish": {
         post: {
           summary: "Submit a video publish job",
@@ -204,6 +505,23 @@ export async function GET() {
           },
           additionalProperties: false,
         },
+        TestUploadDriveVideoPayload: {
+          type: "object",
+          required: ["file"],
+          properties: {
+            file: {
+              type: "string",
+              format: "binary",
+              description: "Video file to upload to GOOGLE_DRIVE_FOLDER_ID.",
+            },
+            filename: {
+              type: "string",
+              description:
+                "Optional filename to use in Google Drive. Defaults to the uploaded file name.",
+              example: "clip_001_final.mp4",
+            },
+          },
+        },
         FindDriveVideoResponse: {
           type: "object",
           required: [
@@ -255,6 +573,67 @@ export async function GET() {
               example: "Multiple files found; newest file selected.",
             },
           },
+        },
+        PendingReviewResponse: {
+          type: "object",
+          properties: {
+            configured: {
+              type: "boolean",
+            },
+            clips: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                  },
+                  title: {
+                    type: "string",
+                  },
+                  caption: {
+                    type: "string",
+                  },
+                  description: {
+                    type: "string",
+                  },
+                  hashtags: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  duration_sec: {
+                    type: "number",
+                  },
+                  ai_generated: {
+                    type: "boolean",
+                  },
+                  platforms: {
+                    type: "array",
+                    items: {
+                      $ref: "#/components/schemas/PlatformTarget",
+                    },
+                  },
+                  drive_video: {
+                    $ref: "#/components/schemas/FindDriveVideoResponse",
+                  },
+                },
+                additionalProperties: true,
+              },
+            },
+          },
+        },
+        ApproveReviewPayload: {
+          type: "object",
+          required: ["id"],
+          properties: {
+            id: {
+              type: "string",
+              example: "clip_001",
+            },
+          },
+          additionalProperties: false,
         },
         PlatformTarget: {
           type: "object",

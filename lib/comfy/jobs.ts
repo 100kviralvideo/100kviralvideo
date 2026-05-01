@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "fs/promises";
 import path from "path";
 import { getComfyStorageSettings } from "@/lib/comfy/settings";
 
@@ -16,6 +16,12 @@ export type ComfyJobRecord = {
   job_id: string;
   status: ComfyJobStatus;
   title?: string;
+  caption?: string;
+  description?: string;
+  hashtags?: string[];
+  duration_sec?: number;
+  segment_lengths?: number[];
+  fps?: number;
   prompt_id?: string;
   comfy_client_id?: string;
   output_file_name?: string;
@@ -30,7 +36,7 @@ const jobs = new Map<string, ComfyJobRecord>();
 
 function getJobRecordPath(jobId: string) {
   const settings = getComfyStorageSettings();
-  return path.join(settings.jobsDir, `${jobId}.json`);
+  return path.join(settings.jobsDir, `${encodeURIComponent(jobId)}.json`);
 }
 
 async function saveJob(job: ComfyJobRecord) {
@@ -57,9 +63,57 @@ async function loadJob(jobId: string) {
   }
 }
 
+function isComfyJobRecord(value: unknown): value is ComfyJobRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as { job_id?: unknown }).job_id === "string" &&
+    typeof (value as { status?: unknown }).status === "string" &&
+    typeof (value as { created_at?: unknown }).created_at === "string" &&
+    typeof (value as { updated_at?: unknown }).updated_at === "string"
+  );
+}
+
+async function loadAllJobs() {
+  const settings = getComfyStorageSettings();
+
+  try {
+    const entries = await readdir(settings.jobsDir, { withFileTypes: true });
+    const loadedJobs = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map(async (entry) => {
+          try {
+            const raw = await readFile(path.join(settings.jobsDir, entry.name), "utf8");
+            const parsed = JSON.parse(raw) as unknown;
+            return isComfyJobRecord(parsed) ? parsed : null;
+          } catch {
+            return null;
+          }
+        })
+    );
+
+    return loadedJobs.filter((job): job is ComfyJobRecord => job !== null);
+  } catch {
+    return [];
+  }
+}
+
 export async function createComfyJob(
   jobId: string,
-  metadata: Pick<ComfyJobRecord, "title"> = {}
+  metadata: Partial<
+    Pick<
+      ComfyJobRecord,
+      | "title"
+      | "caption"
+      | "description"
+      | "hashtags"
+      | "duration_sec"
+      | "segment_lengths"
+      | "fps"
+    >
+  > = {}
 ) {
   const now = new Date().toISOString();
   const job: ComfyJobRecord = {
@@ -96,4 +150,22 @@ export async function updateComfyJob(
 
 export async function getComfyJob(jobId: string) {
   return loadJob(jobId);
+}
+
+export async function findComfyJobByTitle(title: string) {
+  const normalizedTitle = title.trim();
+
+  if (!normalizedTitle) {
+    return null;
+  }
+
+  const cached = Array.from(jobs.values()).filter(
+    (job) => job.title === normalizedTitle
+  );
+  const persisted = await loadAllJobs();
+  const candidates = [...cached, ...persisted]
+    .filter((job) => job.title === normalizedTitle)
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+
+  return candidates[0] ?? null;
 }

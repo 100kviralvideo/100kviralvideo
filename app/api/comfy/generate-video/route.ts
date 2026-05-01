@@ -80,6 +80,51 @@ function getOptionalText(form: FormData, names: string[]) {
   return getPrompt(form, names) || undefined;
 }
 
+function getOptionalStringArray(form: FormData, name: string) {
+  const value = form.get(name);
+
+  if (value === null || value === "") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${name} must be a string array`);
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (trimmed.startsWith("[")) {
+    const parsed = JSON.parse(trimmed) as unknown;
+
+    if (
+      !Array.isArray(parsed) ||
+      parsed.some((item) => typeof item !== "string")
+    ) {
+      throw new Error(`${name} must be a JSON array of strings`);
+    }
+
+    return parsed.map((item) => item.trim()).filter(Boolean);
+  }
+
+  return trimmed
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function calculateDurationSec(segmentLengths: number[] | undefined, fps: number | undefined) {
+  if (!segmentLengths?.length || !fps || fps <= 0) {
+    return undefined;
+  }
+
+  const frameCount = segmentLengths.reduce((sum, value) => sum + value, 0);
+  return Math.round((frameCount / fps) * 1000) / 1000;
+}
+
 function getSegmentPrompts(form: FormData) {
   const rawSegmentPrompts = form.get("segment_prompts");
 
@@ -138,7 +183,7 @@ function buildStatusUrl({
   }
 
   const query = params.toString();
-  return `/api/comfy/jobs/${jobId}${query ? `?${query}` : ""}`;
+  return `/api/comfy/jobs/${encodeURIComponent(jobId)}${query ? `?${query}` : ""}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -182,11 +227,41 @@ export async function POST(req: NextRequest) {
       image_strength: parseOptionalNumber(form, "image_strength"),
     };
     const title = getOptionalText(form, ["title", "video_title"]);
+    const caption = getOptionalText(form, ["caption"]);
+    const description = getOptionalText(form, ["description"]);
+    const hashtags = getOptionalStringArray(form, "hashtags");
+
+    if (!title) {
+      return NextResponse.json({ error: "title is required" }, { status: 400 });
+    }
+
+    if (!caption) {
+      return NextResponse.json({ error: "caption is required" }, { status: 400 });
+    }
+
+    if (!description) {
+      return NextResponse.json({ error: "description is required" }, { status: 400 });
+    }
+
+    if (!hashtags?.length) {
+      return NextResponse.json(
+        { error: "hashtags must be a non-empty array of strings" },
+        { status: 400 }
+      );
+    }
+
+    const durationSec = calculateDurationSec(options.segment_lengths, options.fps);
     const jobId = crypto.randomUUID();
     const paths = await createImagePaths(jobId);
 
     await createComfyJob(jobId, {
       title,
+      caption,
+      description,
+      hashtags,
+      duration_sec: durationSec,
+      segment_lengths: options.segment_lengths,
+      fps: options.fps,
     });
     await Promise.all(
       imageFiles.map((imageFile, index) =>
@@ -218,6 +293,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       job_id: jobId,
       title: title || null,
+      caption: caption || null,
+      description: description || null,
+      hashtags: hashtags || [],
+      duration_sec: durationSec || null,
       status_url: buildStatusUrl({
         jobId,
         promptId: job.prompt_id,

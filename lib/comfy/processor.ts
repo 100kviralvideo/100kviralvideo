@@ -29,7 +29,7 @@ type QueuedComfyJobInput = ComfyProcessJobInput;
 
 export async function createImagePaths(jobId: string) {
   const settings = getComfyStorageSettings();
-  const jobDir = path.join(settings.jobsDir, jobId);
+  const jobDir = path.join(settings.jobsDir, encodeURIComponent(jobId));
 
   await mkdir(jobDir, { recursive: true });
 

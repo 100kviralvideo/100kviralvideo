@@ -473,6 +473,47 @@ export async function GET() {
           },
         },
       },
+      "/api/comfy/jobs/by-title/{title}": {
+        get: {
+          summary: "Get latest ComfyUI video generation job by title",
+          operationId: "getComfyJobByTitle",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              name: "title",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Latest matching ComfyUI job status",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ComfyJob" },
+                },
+              },
+            },
+            "401": {
+              description: "Missing or invalid bearer token",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+            "404": {
+              description: "Job not found",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ErrorResponse" },
+                },
+              },
+            },
+          },
+        },
+      },
     },
     components: {
       securitySchemes: {
@@ -796,6 +837,10 @@ export async function GET() {
             {
               type: "object",
               required: [
+                "title",
+                "caption",
+                "description",
+                "hashtags",
                 "global_prompt",
                 "segment_1_prompt",
                 "segment_2_prompt",
@@ -810,8 +855,22 @@ export async function GET() {
                 title: {
                   type: "string",
                   description:
-                    "Used as the ComfyUI output filename prefix.",
+                    "Used as the ComfyUI output filename prefix and metadata lookup title.",
                   example: "My YouTube Short Title",
+                },
+                caption: {
+                  type: "string",
+                  example: "This ending looks confusing, but it has one clear purpose.",
+                },
+                description: {
+                  type: "string",
+                  example: "AI-generated movie commentary.",
+                },
+                hashtags: {
+                  type: "string",
+                  description:
+                    "Multipart only. Send JSON array text or comma/newline-separated text.",
+                  example: '["movies","film","shorts"]',
                 },
                 global_prompt: { type: "string" },
                 segment_1_prompt: { type: "string" },
@@ -836,6 +895,10 @@ export async function GET() {
             {
               type: "object",
               required: [
+                "title",
+                "caption",
+                "description",
+                "hashtags",
                 "global_prompt",
                 "segment_prompts",
                 "segment_1_image_url",
@@ -847,8 +910,21 @@ export async function GET() {
                 title: {
                   type: "string",
                   description:
-                    "Used as the ComfyUI output filename prefix.",
+                    "Used as the ComfyUI output filename prefix and metadata lookup title.",
                   example: "My YouTube Short Title",
+                },
+                caption: {
+                  type: "string",
+                  example: "This ending looks confusing, but it has one clear purpose.",
+                },
+                description: {
+                  type: "string",
+                  example: "AI-generated movie commentary.",
+                },
+                hashtags: {
+                  type: "array",
+                  items: { type: "string" },
+                  example: ["movies", "film", "shorts"],
                 },
                 global_prompt: { type: "string" },
                 segment_prompts: {
@@ -871,6 +947,13 @@ export async function GET() {
           properties: {
             job_id: { type: "string" },
             title: { type: ["string", "null"] },
+            caption: { type: ["string", "null"] },
+            description: { type: ["string", "null"] },
+            hashtags: {
+              type: "array",
+              items: { type: "string" },
+            },
+            duration_sec: { type: ["number", "null"] },
             status_url: {
               type: "string",
               example:
@@ -887,6 +970,18 @@ export async function GET() {
           properties: {
             job_id: { type: "string" },
             title: { type: "string" },
+            caption: { type: "string" },
+            description: { type: "string" },
+            hashtags: {
+              type: "array",
+              items: { type: "string" },
+            },
+            duration_sec: { type: "number" },
+            segment_lengths: {
+              type: "array",
+              items: { type: "number" },
+            },
+            fps: { type: "number" },
             status: {
               type: "string",
               enum: [

@@ -15,6 +15,9 @@ export const maxDuration = 60;
 type UrlGenerationRequest = ComfyGenerationOptions & {
   title?: unknown;
   video_title?: unknown;
+  caption?: unknown;
+  description?: unknown;
+  hashtags?: unknown;
   prompt?: unknown;
   global_prompt?: unknown;
   prompt_1?: unknown;
@@ -78,6 +81,23 @@ function optionalNumberArray(body: UrlGenerationRequest, field: keyof ComfyGener
   return value;
 }
 
+function optionalStringArray(body: UrlGenerationRequest, field: keyof UrlGenerationRequest) {
+  const value = body[field];
+
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string")
+  ) {
+    throw new Error(`${field} must be an array of strings`);
+  }
+
+  return value.map((item) => item.trim()).filter(Boolean);
+}
+
 function getString(body: UrlGenerationRequest, fields: (keyof UrlGenerationRequest)[]) {
   for (const field of fields) {
     const value = body[field];
@@ -113,6 +133,15 @@ function getSegmentPrompts(body: UrlGenerationRequest) {
     .filter((value): value is string => Boolean(value));
 }
 
+function calculateDurationSec(segmentLengths: number[] | undefined, fps: number | undefined) {
+  if (!segmentLengths?.length || !fps || fps <= 0) {
+    return undefined;
+  }
+
+  const frameCount = segmentLengths.reduce((sum, value) => sum + value, 0);
+  return Math.round((frameCount / fps) * 1000) / 1000;
+}
+
 function buildStatusUrl({
   jobId,
   promptId,
@@ -139,7 +168,7 @@ function buildStatusUrl({
   }
 
   const query = params.toString();
-  return `/api/comfy/jobs/${jobId}${query ? `?${query}` : ""}`;
+  return `/api/comfy/jobs/${encodeURIComponent(jobId)}${query ? `?${query}` : ""}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -196,11 +225,41 @@ export async function POST(req: NextRequest) {
       image_strength: optionalNumber(request, "image_strength"),
     };
     const title = getString(request, ["title", "video_title"]) || undefined;
+    const caption = getString(request, ["caption"]) || undefined;
+    const description = getString(request, ["description"]) || undefined;
+    const hashtags = optionalStringArray(request, "hashtags");
+
+    if (!title) {
+      return NextResponse.json({ error: "title is required" }, { status: 400 });
+    }
+
+    if (!caption) {
+      return NextResponse.json({ error: "caption is required" }, { status: 400 });
+    }
+
+    if (!description) {
+      return NextResponse.json({ error: "description is required" }, { status: 400 });
+    }
+
+    if (!hashtags?.length) {
+      return NextResponse.json(
+        { error: "hashtags must be a non-empty array of strings" },
+        { status: 400 }
+      );
+    }
+
+    const durationSec = calculateDurationSec(options.segment_lengths, options.fps);
     const jobId = crypto.randomUUID();
     const paths = await createImagePaths(jobId);
 
     await createComfyJob(jobId, {
       title,
+      caption,
+      description,
+      hashtags,
+      duration_sec: durationSec,
+      segment_lengths: options.segment_lengths,
+      fps: options.fps,
     });
     await Promise.all(
       imageUrls.map((imageUrl, index) => downloadImage(imageUrl, paths[index]))
@@ -230,6 +289,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       job_id: jobId,
       title: title || null,
+      caption: caption || null,
+      description: description || null,
+      hashtags: hashtags || [],
+      duration_sec: durationSec || null,
       status_url: buildStatusUrl({
         jobId,
         promptId: job.prompt_id,

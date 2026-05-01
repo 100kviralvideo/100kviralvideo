@@ -70,7 +70,7 @@
   },
   "699": {
     "inputs": {
-      "value": 960
+      "value": 540
     },
     "class_type": "INTConstant",
     "_meta": {
@@ -79,7 +79,7 @@
   },
   "701": {
     "inputs": {
-      "value": 544
+      "value": 960
     },
     "class_type": "INTConstant",
     "_meta": {
@@ -283,7 +283,7 @@
         0
       ],
       "loop_count": 0,
-      "filename_prefix": "LTX-2",
+      "filename_prefix": "auto_video",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -780,15 +780,15 @@
         0
       ],
       "variables.b": [
-        "950",
+        "1074",
         0
       ],
       "variables.c": [
-        "950",
+        "1084",
         0
       ],
       "variables.d": [
-        "950",
+        "1094",
         0
       ]
     },

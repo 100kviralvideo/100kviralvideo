@@ -138,7 +138,8 @@ function sanitizeComfyFilenamePrefix(value: string) {
 function setOutputFilenamePrefix(
   workflow: ComfyWorkflow,
   nodeId: string | undefined,
-  title: string | undefined
+  title: string | undefined,
+  jobId: string | undefined
 ) {
   if (!nodeId || !title) {
     return;
@@ -151,7 +152,9 @@ function setOutputFilenamePrefix(
   }
 
   const node = getNode(workflow, nodeId);
-  node.inputs!.filename_prefix = filenamePrefix;
+  node.inputs!.filename_prefix = jobId
+    ? `${jobId}__${filenamePrefix}`
+    : filenamePrefix;
 }
 
 export async function loadWorkflowApi(path: string) {
@@ -187,6 +190,7 @@ export function buildWorkflow({
   fpsNodeId,
   imageStrengthNodeId,
   outputNodeId,
+  outputJobId,
   width,
   height,
   fps,
@@ -206,6 +210,7 @@ export function buildWorkflow({
   fpsNodeId?: string;
   imageStrengthNodeId?: string;
   outputNodeId?: string;
+  outputJobId?: string;
   width?: number;
   height?: number;
   fps?: number;
@@ -241,7 +246,7 @@ export function buildWorkflow({
     setOptionalValue(workflow, nodeId, segmentLengths?.[index]);
   });
   setOptionalValue(workflow, imageStrengthNodeId, imageStrength);
-  setOutputFilenamePrefix(workflow, outputNodeId, outputTitle);
+  setOutputFilenamePrefix(workflow, outputNodeId, outputTitle, outputJobId);
 
   return workflow;
 }

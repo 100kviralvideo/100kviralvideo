@@ -1,5 +1,11 @@
 import { mkdir, readFile, readdir, writeFile } from "fs/promises";
 import path from "path";
+import {
+  getSheetComfyJob,
+  isComfyJobsSheetConfigured,
+  listSheetComfyJobs,
+  upsertSheetComfyJob,
+} from "@/lib/comfy/job-sheets";
 import { getComfyStorageSettings } from "@/lib/comfy/settings";
 
 export type ComfyJobStatus =
@@ -39,25 +45,17 @@ function getJobRecordPath(jobId: string) {
   return path.join(settings.jobsDir, `${encodeURIComponent(jobId)}.json`);
 }
 
-async function saveJob(job: ComfyJobRecord) {
+async function saveLocalJob(job: ComfyJobRecord) {
   const filePath = getJobRecordPath(job.job_id);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(job, null, 2));
-  jobs.set(job.job_id, job);
 }
 
-async function loadJob(jobId: string) {
-  const cached = jobs.get(jobId);
-
-  if (cached) {
-    return cached;
-  }
-
+async function loadLocalJob(jobId: string) {
   try {
     const raw = await readFile(getJobRecordPath(jobId), "utf8");
-    const job = JSON.parse(raw) as ComfyJobRecord;
-    jobs.set(jobId, job);
-    return job;
+    const parsed = JSON.parse(raw) as unknown;
+    return isComfyJobRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -75,7 +73,7 @@ function isComfyJobRecord(value: unknown): value is ComfyJobRecord {
   );
 }
 
-async function loadAllJobs() {
+async function loadLocalJobs() {
   const settings = getComfyStorageSettings();
 
   try {
@@ -98,6 +96,49 @@ async function loadAllJobs() {
   } catch {
     return [];
   }
+}
+
+async function saveJob(job: ComfyJobRecord) {
+  jobs.set(job.job_id, job);
+
+  if (isComfyJobsSheetConfigured()) {
+    await upsertSheetComfyJob(job);
+    return;
+  }
+
+  await saveLocalJob(job);
+}
+
+async function loadJob(jobId: string) {
+  if (isComfyJobsSheetConfigured()) {
+    const sheetJob = await getSheetComfyJob(jobId);
+
+    if (sheetJob) {
+      jobs.set(jobId, sheetJob);
+    }
+
+    return sheetJob;
+  }
+
+  const cached = jobs.get(jobId);
+
+  if (cached) {
+    return cached;
+  }
+
+  const job = await loadLocalJob(jobId);
+
+  if (job) {
+    jobs.set(jobId, job);
+  }
+
+  return job;
+}
+
+async function loadAllJobs() {
+  return isComfyJobsSheetConfigured()
+    ? listSheetComfyJobs()
+    : loadLocalJobs();
 }
 
 export async function createComfyJob(
@@ -159,11 +200,7 @@ export async function findComfyJobByTitle(title: string) {
     return null;
   }
 
-  const cached = Array.from(jobs.values()).filter(
-    (job) => job.title === normalizedTitle
-  );
-  const persisted = await loadAllJobs();
-  const candidates = [...cached, ...persisted]
+  const candidates = (await loadAllJobs())
     .filter((job) => job.title === normalizedTitle)
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 

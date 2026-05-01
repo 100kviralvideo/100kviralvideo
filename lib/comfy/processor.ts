@@ -133,6 +133,7 @@ export async function queueComfyVideoJob({
       segmentLengthNodeIds: settings.segmentLengthNodeIds,
       imageStrengthNodeId: settings.imageStrengthNodeId,
       outputNodeId: settings.outputNodeId,
+      outputJobId: jobId,
       width: options.width,
       height: options.height,
       fps: options.fps,

@@ -98,12 +98,16 @@ function formatHashtag(hashtag: string) {
 function PendingClipCard({
   item,
   approving,
+  denying,
   onApprove,
+  onDeny,
   onUpdate,
 }: {
   item: PrePublishQueueItem;
   approving: boolean;
-  onApprove: (jobId: string) => void;
+  denying: boolean;
+  onApprove: (jobId: string, privacy: string) => void;
+  onDeny: (jobId: string) => void;
   onUpdate: () => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -112,6 +116,7 @@ function PendingClipCard({
   const [editCaption, setEditCaption] = useState(item.caption);
   const [editDescription, setEditDescription] = useState(item.description);
   const [editHashtags, setEditHashtags] = useState(item.hashtags.join(" "));
+  const [privacy, setPrivacy] = useState("public");
 
   const hashtags = useMemo(
     () => item.hashtags.map(formatHashtag).filter(Boolean),
@@ -280,23 +285,46 @@ function PendingClipCard({
         <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-4">
           {!isEditing ? (
             <>
+              <div className="flex items-center gap-2 mr-2">
+                <label htmlFor={`privacy-${item.job_id}`} className="text-sm font-medium text-zinc-700">Privacy:</label>
+                <select
+                  id={`privacy-${item.job_id}`}
+                  className="rounded border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none"
+                  value={privacy}
+                  onChange={(e) => setPrivacy(e.target.value)}
+                  disabled={approving || denying}
+                >
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                  <option value="unlisted">Unlisted</option>
+                </select>
+              </div>
               <button
                 className="rounded bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-                disabled={approving}
-                onClick={() => onApprove(item.job_id)}
+                disabled={approving || denying}
+                onClick={() => onApprove(item.job_id, privacy)}
                 type="button"
               >
                 {approving ? "Publishing..." : "Approve and publish"}
               </button>
               <button
-                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-400"
+                disabled={approving || denying}
+                onClick={() => onDeny(item.job_id)}
+                type="button"
+              >
+                {denying ? "Denying..." : "Deny"}
+              </button>
+              <button
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+                disabled={approving || denying}
                 onClick={() => setIsEditing(true)}
                 type="button"
               >
                 Edit
               </button>
               <a
-                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
                 href={item.drive_file?.web_view_link || item.final_video_url}
                 rel="noreferrer"
                 target="_blank"
@@ -470,12 +498,16 @@ function HistoryClipCard({ item }: { item: PrePublishQueueItem }) {
 function PendingTable({
   items,
   approvingJobId,
+  denyingJobId,
   onApprove,
+  onDeny,
   onUpdate,
 }: {
   items: PrePublishQueueItem[];
   approvingJobId: string | null;
-  onApprove: (jobId: string) => void;
+  denyingJobId: string | null;
+  onApprove: (jobId: string, privacy: string) => void;
+  onDeny: (jobId: string) => void;
   onUpdate: () => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -523,7 +555,9 @@ function PendingTable({
                     <PendingClipCard
                       item={item}
                       approving={approvingJobId === item.job_id}
+                      denying={denyingJobId === item.job_id}
                       onApprove={onApprove}
+                      onDeny={onDeny}
                       onUpdate={onUpdate}
                     />
                   </td>
@@ -600,6 +634,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [approvingJobId, setApprovingJobId] = useState<string | null>(null);
+  const [denyingJobId, setDenyingJobId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   async function loadPending() {
@@ -653,7 +688,7 @@ export function Dashboard() {
     };
   }, []);
 
-  async function approve(jobId: string) {
+  async function approve(jobId: string, privacy: string) {
     setApprovingJobId(jobId);
     setMessage(null);
     setError(null);
@@ -664,7 +699,7 @@ export function Dashboard() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ job_id: jobId }),
+        body: JSON.stringify({ job_id: jobId, privacy }),
       });
       const data = await response.json();
 
@@ -682,6 +717,38 @@ export function Dashboard() {
       );
     } finally {
       setApprovingJobId(null);
+    }
+  }
+
+  async function deny(jobId: string) {
+    setDenyingJobId(jobId);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/pre-publish/deny", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ job_id: jobId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Deny failed");
+      }
+
+      setMessage(`Denied ${jobId}`);
+      await loadPending();
+    } catch (denyError) {
+      setError(
+        denyError instanceof Error
+          ? denyError.message
+          : "Deny failed"
+      );
+    } finally {
+      setDenyingJobId(null);
     }
   }
 
@@ -779,7 +846,9 @@ export function Dashboard() {
                 <PendingTable
                   items={items}
                   approvingJobId={approvingJobId}
+                  denyingJobId={denyingJobId}
                   onApprove={approve}
+                  onDeny={deny}
                   onUpdate={loadPending}
                 />
               )

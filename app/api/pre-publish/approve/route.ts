@@ -52,6 +52,18 @@ export async function POST(req: NextRequest) {
 
     await updatePrePublishStatus(jobId, { status: "publishing" });
 
+    const privacy = typeof body.privacy === "string" ? body.privacy : undefined;
+    const platforms = current.item.platforms.map((target) => {
+      if (!privacy) return target;
+      if (target.platform === "youtube_shorts") {
+        return { ...target, privacy: privacy as any };
+      }
+      return { 
+        ...target, 
+        privacy_level: privacy === "private" ? "SELF_ONLY" : "EVERYONE" 
+      };
+    });
+
     const publishPayload: PublishPayload = {
       job_id: current.item.job_id,
       final_video_url: current.item.final_video_url,
@@ -63,7 +75,7 @@ export async function POST(req: NextRequest) {
       human_approved: true,
       rights_cleared: true,
       ai_generated: current.item.ai_generated,
-      platforms: current.item.platforms,
+      platforms: platforms,
     };
     const publishResult = await processPublishPayload(publishPayload);
 

@@ -110,6 +110,12 @@ async function saveJob(job: ComfyJobRecord) {
 }
 
 async function loadJob(jobId: string) {
+  const cached = jobs.get(jobId);
+
+  if (cached) {
+    return cached;
+  }
+
   if (isComfyJobsSheetConfigured()) {
     const sheetJob = await getSheetComfyJob(jobId);
 
@@ -118,12 +124,6 @@ async function loadJob(jobId: string) {
     }
 
     return sheetJob;
-  }
-
-  const cached = jobs.get(jobId);
-
-  if (cached) {
-    return cached;
   }
 
   const job = await loadLocalJob(jobId);

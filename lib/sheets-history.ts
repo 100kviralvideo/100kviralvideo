@@ -12,6 +12,20 @@ const SHEET_HEADERS = [
   "results_json",
 ];
 
+const DEFAULT_HISTORY_CACHE_MS = 15_000;
+
+let headersReady = false;
+let ensureHeadersPromise: Promise<void> | null = null;
+let historyCache:
+  | { items: PublishHistoryItem[]; limit: number; expiresAt: number }
+  | null = null;
+let historyReadPromise: Promise<PublishHistoryItem[]> | null = null;
+
+function getHistoryCacheMs() {
+  const value = Number(process.env.GOOGLE_SHEETS_CACHE_MS);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_HISTORY_CACHE_MS;
+}
+
 function getSheetsConfig() {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
   const clientEmail = process.env.GOOGLE_SHEETS_CLIENT_EMAIL?.trim();
@@ -58,6 +72,26 @@ function createSheetsClient() {
 }
 
 async function ensureHeaders() {
+  if (headersReady) {
+    return;
+  }
+
+  if (ensureHeadersPromise) {
+    return ensureHeadersPromise;
+  }
+
+  ensureHeadersPromise = ensureHeadersUncached()
+    .then(() => {
+      headersReady = true;
+    })
+    .finally(() => {
+      ensureHeadersPromise = null;
+    });
+
+  return ensureHeadersPromise;
+}
+
+async function ensureHeadersUncached() {
   const { sheets, spreadsheetId, sheetName } = createSheetsClient();
   const range = `${sheetName}!A1:H1`;
   const response = await sheets.spreadsheets.values.get({
@@ -103,6 +137,7 @@ export async function appendSheetHistoryItem(item: PublishHistoryItem) {
       ],
     },
   });
+  historyCache = null;
 }
 
 function parseHistoryRow(row: string[]): PublishHistoryItem | null {
@@ -138,6 +173,37 @@ function parseHistoryRow(row: string[]): PublishHistoryItem | null {
 }
 
 export async function readSheetHistory(limit = 50) {
+  const now = Date.now();
+  if (
+    historyCache &&
+    historyCache.limit >= limit &&
+    historyCache.expiresAt > now
+  ) {
+    return historyCache.items.slice(0, limit);
+  }
+
+  if (historyReadPromise) {
+    const items = await historyReadPromise;
+    return items.slice(0, limit);
+  }
+
+  historyReadPromise = readSheetHistoryUncached()
+    .catch((error) => {
+      if (historyCache) {
+        return historyCache.items;
+      }
+
+      throw error;
+    })
+    .finally(() => {
+      historyReadPromise = null;
+    });
+
+  const items = await historyReadPromise;
+  return items.slice(0, limit);
+}
+
+async function readSheetHistoryUncached() {
   await ensureHeaders();
 
   const { sheets, spreadsheetId, sheetName } = createSheetsClient();
@@ -147,9 +213,16 @@ export async function readSheetHistory(limit = 50) {
   });
   const rows = response.data.values ?? [];
 
-  return rows
+  const items = rows
     .map((row) => parseHistoryRow(row as string[]))
     .filter((item): item is PublishHistoryItem => Boolean(item))
-    .reverse()
-    .slice(0, limit);
+    .reverse();
+
+  historyCache = {
+    items,
+    limit: items.length,
+    expiresAt: Date.now() + getHistoryCacheMs(),
+  };
+
+  return items;
 }

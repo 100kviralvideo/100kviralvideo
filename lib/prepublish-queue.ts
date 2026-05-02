@@ -55,6 +55,18 @@ type SavePrePublishInput = {
   payload: PublishPayload;
 };
 
+const DEFAULT_QUEUE_CACHE_MS = 15_000;
+
+let queueSheetReady = false;
+let ensureQueueSheetPromise: Promise<void> | null = null;
+let queueRowsCache: { rows: QueueRow[]; expiresAt: number } | null = null;
+let queueRowsReadPromise: Promise<QueueRow[]> | null = null;
+
+function getQueueCacheMs() {
+  const value = Number(process.env.GOOGLE_SHEETS_CACHE_MS);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_QUEUE_CACHE_MS;
+}
+
 function getSheetsConfig() {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
   const clientEmail = process.env.GOOGLE_SHEETS_CLIENT_EMAIL?.trim();
@@ -108,6 +120,26 @@ function quoteSheetName(sheetName: string) {
 }
 
 async function ensureQueueSheetAndHeaders() {
+  if (queueSheetReady) {
+    return;
+  }
+
+  if (ensureQueueSheetPromise) {
+    return ensureQueueSheetPromise;
+  }
+
+  ensureQueueSheetPromise = ensureQueueSheetAndHeadersUncached()
+    .then(() => {
+      queueSheetReady = true;
+    })
+    .finally(() => {
+      ensureQueueSheetPromise = null;
+    });
+
+  return ensureQueueSheetPromise;
+}
+
+async function ensureQueueSheetAndHeadersUncached() {
   const { sheets, spreadsheetId, sheetName } = createSheetsClient();
   const spreadsheet = await sheets.spreadsheets.get({
     spreadsheetId,
@@ -229,6 +261,31 @@ function parseQueueRow(row: string[], index: number): QueueRow | null {
 }
 
 async function readQueueRows() {
+  const now = Date.now();
+  if (queueRowsCache && queueRowsCache.expiresAt > now) {
+    return queueRowsCache.rows;
+  }
+
+  if (queueRowsReadPromise) {
+    return queueRowsReadPromise;
+  }
+
+  queueRowsReadPromise = readQueueRowsUncached()
+    .catch((error) => {
+      if (queueRowsCache) {
+        return queueRowsCache.rows;
+      }
+
+      throw error;
+    })
+    .finally(() => {
+      queueRowsReadPromise = null;
+    });
+
+  return queueRowsReadPromise;
+}
+
+async function readQueueRowsUncached() {
   await ensureQueueSheetAndHeaders();
 
   const { sheets, spreadsheetId, sheetName } = createSheetsClient();
@@ -238,9 +295,16 @@ async function readQueueRows() {
   });
   const rows = response.data.values ?? [];
 
-  return rows
+  const parsedRows = rows
     .map((row, index) => parseQueueRow(row as string[], index))
     .filter((item): item is QueueRow => Boolean(item));
+
+  queueRowsCache = {
+    rows: parsedRows,
+    expiresAt: Date.now() + getQueueCacheMs(),
+  };
+
+  return parsedRows;
 }
 
 function rowValues(item: PrePublishQueueItem) {
@@ -303,6 +367,12 @@ export async function savePrePublishItem(input: SavePrePublishInput) {
         values: [rowValues(item)],
       },
     });
+    queueRowsCache = {
+      rows: (queueRowsCache?.rows ?? []).map((row) =>
+        row.rowNumber === existing.rowNumber ? { ...item, rowNumber: existing.rowNumber } : row
+      ),
+      expiresAt: Date.now() + getQueueCacheMs(),
+    };
   } else {
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -313,6 +383,7 @@ export async function savePrePublishItem(input: SavePrePublishInput) {
         values: [rowValues(item)],
       },
     });
+    queueRowsCache = null;
   }
 
   return item;
@@ -419,6 +490,12 @@ export async function updatePrePublishStatus(
       values: [rowValues(next)],
     },
   });
+  queueRowsCache = {
+    rows: (queueRowsCache?.rows ?? []).map((row) =>
+      row.rowNumber === current.rowNumber ? { ...next, rowNumber: current.rowNumber } : row
+    ),
+    expiresAt: Date.now() + getQueueCacheMs(),
+  };
 
   return next;
 }
@@ -456,6 +533,12 @@ export async function updatePrePublishDetails(
       values: [rowValues(next)],
     },
   });
+  queueRowsCache = {
+    rows: (queueRowsCache?.rows ?? []).map((row) =>
+      row.rowNumber === current.rowNumber ? { ...next, rowNumber: current.rowNumber } : row
+    ),
+    expiresAt: Date.now() + getQueueCacheMs(),
+  };
 
   return next;
 }

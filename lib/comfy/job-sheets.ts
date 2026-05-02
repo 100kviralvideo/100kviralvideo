@@ -14,6 +14,18 @@ type SheetRow = {
   record: ComfyJobRecord;
 };
 
+const DEFAULT_ROWS_CACHE_MS = 15_000;
+
+let sheetReady = false;
+let ensureSheetPromise: Promise<void> | null = null;
+let rowsCache: { rows: SheetRow[]; expiresAt: number } | null = null;
+let rowsReadPromise: Promise<SheetRow[]> | null = null;
+
+function getRowsCacheMs() {
+  const value = Number(process.env.GOOGLE_SHEETS_CACHE_MS);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_ROWS_CACHE_MS;
+}
+
 function getSheetsConfig() {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
   const clientEmail = process.env.GOOGLE_SHEETS_CLIENT_EMAIL?.trim();
@@ -78,6 +90,26 @@ function isComfyJobRecord(value: unknown): value is ComfyJobRecord {
 }
 
 async function ensureSheetAndHeaders() {
+  if (sheetReady) {
+    return;
+  }
+
+  if (ensureSheetPromise) {
+    return ensureSheetPromise;
+  }
+
+  ensureSheetPromise = ensureSheetAndHeadersUncached()
+    .then(() => {
+      sheetReady = true;
+    })
+    .finally(() => {
+      ensureSheetPromise = null;
+    });
+
+  return ensureSheetPromise;
+}
+
+async function ensureSheetAndHeadersUncached() {
   const { sheets, spreadsheetId, sheetName } = createSheetsClient();
   const spreadsheet = await sheets.spreadsheets.get({
     spreadsheetId,
@@ -146,6 +178,31 @@ async function readRows({ ensureHeaders = true } = {}) {
     return [];
   }
 
+  const now = Date.now();
+  if (rowsCache && rowsCache.expiresAt > now) {
+    return rowsCache.rows;
+  }
+
+  if (rowsReadPromise) {
+    return rowsReadPromise;
+  }
+
+  rowsReadPromise = readRowsUncached(ensureHeaders)
+    .catch((error) => {
+      if (rowsCache) {
+        return rowsCache.rows;
+      }
+
+      throw error;
+    })
+    .finally(() => {
+      rowsReadPromise = null;
+    });
+
+  return rowsReadPromise;
+}
+
+async function readRowsUncached(ensureHeaders: boolean) {
   if (ensureHeaders) {
     await ensureSheetAndHeaders();
   }
@@ -157,9 +214,16 @@ async function readRows({ ensureHeaders = true } = {}) {
   });
   const rows = response.data.values ?? [];
 
-  return rows
+  const parsedRows = rows
     .map((row, index) => parseRow(row as string[], index))
     .filter((row): row is SheetRow => Boolean(row));
+
+  rowsCache = {
+    rows: parsedRows,
+    expiresAt: Date.now() + getRowsCacheMs(),
+  };
+
+  return parsedRows;
 }
 
 function rowValues(job: ComfyJobRecord) {
@@ -194,6 +258,12 @@ export async function upsertSheetComfyJob(job: ComfyJobRecord) {
         values: [rowValues(job)],
       },
     });
+    rowsCache = {
+      rows: rows.map((row) =>
+        row.rowNumber === existing.rowNumber ? { ...row, record: job } : row
+      ),
+      expiresAt: Date.now() + getRowsCacheMs(),
+    };
     return;
   }
 
@@ -206,6 +276,7 @@ export async function upsertSheetComfyJob(job: ComfyJobRecord) {
       values: [rowValues(job)],
     },
   });
+  rowsCache = null;
 }
 
 export async function getSheetComfyJob(jobId: string) {
